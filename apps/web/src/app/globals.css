@@ -1,10 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 body {
   background-color: #202020; /* Dark background */
   color: #ffffff; /* Light text for contrast */
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 header {
@@ -16,40 +17,48 @@ header {
   border-bottom: 1px solid #333333; /* Subtle border */
 }
 
-.sidebar {
-  background-color: #2c2c2c; /* Sidebar matches header */
-  height: 100vh; /* Full height */
-  padding: 15px;
-  overflow-y: auto;
+.combined-header {
+  background-color: #2c2c2c; /* Match sidebar and header */
+  padding: 10px 20px; /* Match padding with sidebar header */
+  height: 60px; /* Set a fixed height */
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #444444; /* Subtle divider */
 }
 
-.sidebar a {
+.vm-header {
+  border-right: 1px solid #444444; /* Subtle divider */
+  padding-right: 10px; /* Optional: Add some padding to the right */
+}
+
+.sidebar {
+  background-color: #2c2c2c; /* Sidebar matches header */
+  height: 100%; /* Full height */
+  padding: 0; /* Remove padding to ensure header covers the top */
+  overflow-y: auto;
+  position: relative;
+}
+
+.sidebar a, .sidebar-item {
   color: #ffffff;
   text-decoration: none;
-  display: block;
+  display: flex; /* Use flexbox for horizontal alignment */
+  align-items: center; /* Center items vertically */
   padding: 10px;
   border-radius: 5px;
   margin-bottom: 10px;
+  background-color: #2c2c2c; /* Ensure background color matches sidebar */
 }
 
-.sidebar a:hover {
+.sidebar a:hover, .sidebar-item:hover {
   background-color: #444444;
 }
 
 .main-content {
   background-color: #303030; /* Slightly lighter content area */
-  height: 100vh;
+  height: 100%; /* Full height */
   overflow-y: auto;
   padding: 20px;
-}
-
-.main-content-header {
-  background-color: #2c2c2c; /* Match sidebar and header */
-  padding: 10px 20px;
-  margin-bottom: 20px;
-  font-size: 16px;
-  font-weight: bold;
-  border-bottom: 1px solid #444444; /* Subtle divider */
 }
 
 .welcome-buttons button {
