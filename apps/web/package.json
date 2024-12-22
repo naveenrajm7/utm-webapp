@@ -9,19 +9,24 @@
     "start": "next start"
   },
   "dependencies": {
+    "@repo/ui": "*",
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
     "next": "^14.1.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "@repo/ui": "*"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.1.1",
+    "@repo/eslint-config": "*",
+    "@repo/typescript-config": "*",
     "@types/node": "^20.11.24",
     "@types/react": "^18.2.61",
     "@types/react-dom": "^18.2.19",
+    "autoprefixer": "^10.4.20",
     "eslint": "^8.57.0",
-    "@repo/eslint-config": "*",
-    "@repo/typescript-config": "*",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
     "typescript": "5.5.4"
   }
 }
