@@ -19,7 +19,7 @@ server.listen(port, () => {
 
 // on every connection, spawn a new zsh process
 wss.on("connection", (ws) => {
-  const ptyProcess = spawn("zsh", [], {
+  const ptyProcess = spawn("screen", ["/dev/ttys027"], {
     name: "xterm-color",
     env: process.env,
   });
