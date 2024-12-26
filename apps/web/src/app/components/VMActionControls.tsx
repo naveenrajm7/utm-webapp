@@ -56,63 +56,83 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
     // Add logic to configure VM
   };
 
+  const handleConnect = () => {
+    console.log(`Connecting to VM: ${vmUUID}`);
+    // Add logic to connect to VM
+    window.open(`http://localhost:3002?vmUUID=${vmUUID}`, '_blank');
+  };
+
   return (
     <div className="d-flex align-items-center justify-content-end">
 
-{/* VM Actions */}
-<button
-  className="btn btn-link text-white p-0 mx-2"
-  onClick={handleDelete}
-  title="Delete VM"
-  disabled={vmStatus === 'started'} // Disable only when VM is started
-  style={{
-    pointerEvents: vmStatus === 'started' ? 'none' : 'auto', // Disable interactions
-    color: vmStatus === 'started' ? '#6c757d' : 'inherit', // Grey out icon if disabled
-  }}
->
-  <i className="bi bi-trash" style={{ fontSize: '1.5rem' }}></i>
-</button>
+      {/* VM Actions */}
+      <button
+        className="btn btn-link text-white p-0 mx-2"
+        onClick={handleDelete}
+        title="Delete VM"
+        disabled={vmStatus === 'started'} // Disable only when VM is started
+        style={{
+          pointerEvents: vmStatus === 'started' ? 'none' : 'auto', // Disable interactions
+          color: vmStatus === 'started' ? '#6c757d' : 'inherit', // Grey out icon if disabled
+        }}
+      >
+        <i className="bi bi-trash" style={{ fontSize: '1.5rem' }}></i>
+      </button>
 
-<button
-  className="btn btn-link text-white p-0 mx-2"
-  onClick={handleClone}
-  title="Clone VM"
->
-  <i className="bi bi-files" style={{ fontSize: '1.5rem' }}></i>
-</button>
+      <button
+        className="btn btn-link text-white p-0 mx-2"
+        onClick={handleClone}
+        title="Clone VM"
+      >
+        <i className="bi bi-files" style={{ fontSize: '1.5rem' }}></i>
+      </button>
 
-{/* Play/Stop Button */}
-{vmStatus === 'stopped' ? (
-  <button
-    className="btn btn-link text-white p-0 mx-2"
-    onClick={handlePlay}
-    title="Start VM"
-  >
-    <i className="bi bi-play" style={{ fontSize: '1.5rem' }}></i>
-  </button>
-) : (
-  <button
-    className="btn btn-link text-white p-0 mx-2"
-    onClick={handleStop}
-    title="Stop VM"
-  >
-    <i className="bi bi-stop-circle" style={{ fontSize: '1.5rem' }}></i>
-  </button>
-)}
+      {/* Connect Button */}
+      <button
+        className="btn btn-link text-white p-0 mx-2"
+        onClick={handleConnect}
+        title="Connect VM"
+        disabled={vmStatus === 'stopped'} // Disable only when VM is stopped
+        style={{
+          pointerEvents: vmStatus === 'stopped' ? 'none' : 'auto', // Disable interactions
+          color: vmStatus === 'stopped' ? '#6c757d' : 'inherit', // Grey out icon if disabled
+        }}
+      >
+        <i className="bi bi-terminal" style={{ fontSize: '1.5rem' }}></i>
+      </button>
 
-{/* Configure Button */}
-<button
-  className="btn btn-link text-white p-0 mx-2"
-  onClick={handleConfigure}
-  title="Configure VM"
-  disabled={vmStatus === 'started'} // Disable only when VM is started
-  style={{
-    pointerEvents: vmStatus === 'started' ? 'none' : 'auto', // Disable interactions
-    color: vmStatus === 'started' ? '#6c757d' : 'inherit', // Grey out icon if disabled
-  }}
->
-  <i className="bi bi-sliders" style={{ fontSize: '1.5rem' }}></i>
-</button>
+      {/* Play/Stop Button */}
+      {vmStatus === 'stopped' ? (
+        <button
+          className="btn btn-link text-white p-0 mx-2"
+          onClick={handlePlay}
+          title="Start VM"
+        >
+          <i className="bi bi-play" style={{ fontSize: '1.5rem' }}></i>
+        </button>
+      ) : (
+        <button
+          className="btn btn-link text-white p-0 mx-2"
+          onClick={handleStop}
+          title="Stop VM"
+        >
+          <i className="bi bi-stop-circle" style={{ fontSize: '1.5rem' }}></i>
+        </button>
+      )}
+
+      {/* Configure Button */}
+      <button
+        className="btn btn-link text-white p-0 mx-2"
+        onClick={handleConfigure}
+        title="Configure VM"
+        disabled={vmStatus === 'started'} // Disable only when VM is started
+        style={{
+          pointerEvents: vmStatus === 'started' ? 'none' : 'auto', // Disable interactions
+          color: vmStatus === 'started' ? '#6c757d' : 'inherit', // Grey out icon if disabled
+        }}
+      >
+        <i className="bi bi-sliders" style={{ fontSize: '1.5rem' }}></i>
+      </button>
 
     </div>
   );

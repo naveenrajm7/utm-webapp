@@ -4,7 +4,10 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 
-const term : Terminal = new Terminal();
+const term : Terminal = new Terminal({
+                              convertEol: true, // Handle newlines properly
+                            });
+
 const ws = new WebSocket("ws://localhost:3001");
 
 function XTerminal() {
@@ -28,6 +31,16 @@ function XTerminal() {
 
     term.open(terminalRef.current);
 
+    term.onResize(({ cols, rows }) => {
+      ws.send(
+        JSON.stringify({
+          type: "resize",
+          cols,
+          rows,
+        })
+      );
+    });
+
     term.onKey((e) => {
       ws.send(
         JSON.stringify({
@@ -40,7 +53,7 @@ function XTerminal() {
   },[terminalRef])
 
   return (
-    <div ref={terminalRef}></div>
+    <div ref={terminalRef} style={{ width: "100%", height: "100%" }}></div>
   );
 }
 
