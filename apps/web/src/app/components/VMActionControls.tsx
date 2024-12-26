@@ -3,20 +3,30 @@ import React, { useEffect, useState } from 'react';
 const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   const [vmStatus, setVmStatus] = useState<string>('stopped'); // Default status
 
-  // TODO: Use context to share VM status across components (e.g., VMList, VMInfo)
-  // Fetch the VM status on mount
+  // Fetch the VM status on mount or when vmUUID changes
   useEffect(() => {
-    // Simulate fetching VM status
     const fetchVmStatus = async () => {
-      // Replace with actual API call
-      const status = await new Promise<string>((resolve) =>
-        setTimeout(() => resolve('stopped'), 500) // Simulated "stopped" status
-      );
-      setVmStatus(status);
+      try {
+        // Replace this URL with your actual API endpoint
+        const response = await fetch(`http://127.0.0.1:3001/status_vm?uuid=${vmUUID}`);
+        
+        if (!response.ok) {
+          throw new Error(`Failed to fetch VM status: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        // Assuming the API response contains a "vmStatus" field
+        setVmStatus(data.vmStatus);
+      } catch (error) {
+        console.error("Error fetching VM status:", error);
+        // Set a fallback status in case of error
+        setVmStatus('unknown');
+      }
     };
 
     fetchVmStatus();
-  }, [vmUUID]);
+  }, [vmUUID]); // Re-run when vmUUID changes
 
   // Actions
   const handlePlay = () => {
