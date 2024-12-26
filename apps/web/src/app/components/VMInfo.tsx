@@ -53,24 +53,24 @@ const VMInfo: React.FC<VMInfoProps> = ({ uuid }) => {
   {/* VM Details */}
   <div className="vm-details">
     <div className="vm-detail">
-      <span className="icon status-icon"></span>
-      <span><strong>Status:</strong> {vmConfig.Status}</span>
+      <i className="bi bi-info-circle" style={{ marginRight: '20px', verticalAlign: 'middle' }}></i>
+      <span className="label"><strong>Status:</strong></span>
+      <span className="value">{vmConfig.Status}</span>
     </div>
     <div className="vm-detail">
-      <span className="icon architecture-icon"></span>
-      <span><strong>Architecture:</strong> {vmConfig.Architecture}</span>
+      <i className="bi bi-cpu" style={{ marginRight: '20px', verticalAlign: 'middle' }}></i>
+      <span className="label"><strong>Architecture:</strong></span>
+      <span className="value">{vmConfig.Architecture}</span>
     </div>
     <div className="vm-detail">
-      <span className="icon machine-icon"></span>
-      <span><strong>Machine:</strong> {vmConfig.Machine}</span>
+      <i className="bi bi-display" style={{ marginRight: '20px', verticalAlign: 'middle' }}></i>
+      <span className="label"><strong>Machine:</strong></span>
+      <span className="value">{vmConfig.Machine}</span>
     </div>
     <div className="vm-detail">
-      <span className="icon memory-icon"></span>
-      <span><strong>Memory:</strong> {vmConfig.Memory} MB</span>
-    </div>
-    <div className="vm-detail">
-      <span className="icon serial-icon"></span>
-      <span><strong>Serial Ports:</strong> {vmConfig.SerialPorts.join(', ')}</span>
+      <i className="bi bi-memory" style={{ marginRight: '20px', verticalAlign: 'middle' }}></i>
+      <span className="label"><strong>Memory:</strong></span>
+      <span className="value">{vmConfig.Memory} MB</span>
     </div>
   </div>
 </div>

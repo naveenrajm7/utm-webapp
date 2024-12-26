@@ -114,6 +114,14 @@ header {
   width: 24px;
   height: 24px;
   background-color: #555;
-  border-radius: 50%;
   margin-right: 10px;
+}
+
+.label {
+  flex-grow: 1; /* Push the value to the right */
+  text-align: left; /* Align text to the left */
+}
+
+.value {
+  text-align: right; /* Align value to the right */
 }
