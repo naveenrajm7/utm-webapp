@@ -54,6 +54,11 @@ header {
   background-color: #444444;
 }
 
+.sidebar a.active {
+  background-color: #007bff; /* Blue color for the active item */
+  color: white; /* Ensure text is readable */
+}
+
 .main-content {
   background-color: #303030; /* Slightly lighter content area */
   height: 100%; /* Full height */

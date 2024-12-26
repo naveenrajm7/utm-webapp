@@ -14,6 +14,7 @@ interface VMListProps {
 const VMList: React.FC<VMListProps> = ({ onSelectVM }) => {
   const [vms, setVMs] = useState<VM[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeVMUUID, setActiveVMUUID] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`${API_HOST}/list_vms`)
@@ -28,6 +29,11 @@ const VMList: React.FC<VMListProps> = ({ onSelectVM }) => {
       });
   }, []);
 
+  const handleClick = (uuid: string) => {
+    setActiveVMUUID(uuid);
+    onSelectVM(uuid);
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -35,7 +41,12 @@ const VMList: React.FC<VMListProps> = ({ onSelectVM }) => {
   return (
     <>
       {vms.map(vm => (
-        <a key={vm.UUID} href="#" className="list-group-item d-flex align-items-center sidebar-item" onClick={() => onSelectVM(vm.UUID)}>
+        <a
+          key={vm.UUID}
+          href="#"
+          className={`list-group-item d-flex align-items-center sidebar-item ${activeVMUUID === vm.UUID ? 'active' : ''}`}
+          onClick={() => handleClick(vm.UUID)}
+        >
           <div className="flex-shrink-0 w-15 d-flex justify-content-center">
             <i className="bi bi-display"></i> {/* Display icon */}
           </div>
