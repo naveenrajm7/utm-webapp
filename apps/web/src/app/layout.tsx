@@ -50,7 +50,7 @@ export default function RootLayout({
         >
           {/* VM Header Section */}
           <div className="d-flex align-items-center vm-header" style={{ width: '300px' }}>
-            <span>Virtual Machines</span>
+            <span onClick={() => setSelectedVMUUID(null)} style={{ cursor: 'pointer' }}>Virtual Machines</span>
           </div>
 
           {/* UTM Section */}
