@@ -4,6 +4,11 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 
+// TODO: Create a new terminal and websocket instance
+// for every new call made by web client
+// process URL given by the web client
+// Create a new terminal and websocket instance
+// pass the URL to the API so it can create appropriate PTY
 const term : Terminal = new Terminal({
                               convertEol: true, // Handle newlines properly
                             });

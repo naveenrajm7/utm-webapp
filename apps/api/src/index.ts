@@ -26,7 +26,8 @@ wss.on("connection", async (ws, req) => {
   
 
   if (!vmUUID) {
-    // if no vmUUID is provided, use the default
+    // log("VM UUID not provided");
+    // Hard code the VM UUID for testing
     vmUUID = "5D28BFD8-AB32-46A7-8BE4-123892B7A9C3";
     // ws.close();
     // return;
