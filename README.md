@@ -17,6 +17,8 @@ This Turborepo includes the following:
 
 ### Apps and Packages
 
-- `web`: a [Next.js](https://nextjs.org/) app
-- `api`: an [Express](https://expressjs.com/) server
+- `web`: a [Next.js](https://nextjs.org/) app - Main UI for UTM Web
+- `api`: an [Express](https://expressjs.com/) server - providing APIs to control UTM.
+- `terminal`: a [Next.js](https://nextjs.org/) app - providing terminal emulators for VM.
+
 
