@@ -57,9 +57,15 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   };
 
   const handleConnect = () => {
-    console.log(`Connecting to VM: ${vmUUID}`);
+    console.log(`Connecting to VM via Serial: ${vmUUID}`);
     // Add logic to connect to VM
     window.open(`http://localhost:3002?vmUUID=${vmUUID}`, '_blank');
+  };
+
+  const handleVNC = () => {
+    console.log(`Connecting to VM via VNC: ${vmUUID}`);
+    // Add logic to connect to VM
+    window.open(`/vnc/${vmUUID}`, '_blank');
   };
 
   return (
@@ -88,6 +94,7 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
       </button>
 
       {/* Connect Button */}
+      {/* Serial connection */}
       <button
         className="btn btn-link text-white p-0 mx-2"
         onClick={handleConnect}
@@ -99,6 +106,19 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
         }}
       >
         <i className="bi bi-terminal" style={{ fontSize: '1.5rem' }}></i>
+      </button>
+      {/* VNC connection */}
+      <button
+        className="btn btn-link text-white p-0 mx-2"
+        onClick={handleVNC}
+        title="Connect VNC"
+        disabled={vmStatus === 'stopped'} // Disable only when VM is stopped
+        style={{
+          pointerEvents: vmStatus === 'stopped' ? 'none' : 'auto', // Disable interactions
+          color: vmStatus === 'stopped' ? '#6c757d' : 'inherit', // Grey out icon if disabled
+        }}
+      >
+        <i className="bi bi-display" style={{ fontSize: '1.5rem' }}></i>
       </button>
 
       {/* Play/Stop Button */}
