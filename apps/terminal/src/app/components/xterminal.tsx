@@ -4,37 +4,45 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 
-// TODO: Create a new terminal and websocket instance
-// for every new call made by web client
-// process URL given by the web client
-// Create a new terminal and websocket instance
-// pass the URL to the API so it can create appropriate PTY
-const term : Terminal = new Terminal({
-                              convertEol: true, // Handle newlines properly
-                            });
-
-const ws = new WebSocket("ws://localhost:3001");
-
 function XTerminal() {
-  const terminalRef = useRef<HTMLDivElement | null>(null)
+  const terminalRef = useRef<HTMLDivElement | null>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const vmUUID = urlParams.get('vmUUID');
+
+    if (!vmUUID) {
+      console.error("VM UUID not provided");
+      return;
+    }
+
+    // Create a new terminal instance
+    const term = new Terminal({
+      convertEol: true, // Handle newlines properly
+    });
+    termRef.current = term;
+
+    // Create a new WebSocket connection
+    const ws = new WebSocket(`ws://localhost:3001?vmUUID=${vmUUID}`);
+    wsRef.current = ws;
+
     // on every message from ws, write it to the terminal
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === "data") term.write(data.data);
     };
 
-    // close the ws connection when the component unmounts
-    return () => {
-      ws.close();
-    };
-  }, []);
+    // Handle terminal data input, is this same as onKey?
+    // term.onData((data) => {
+    //   ws.send(JSON.stringify({ type: "command", data }));
+    // });
 
-  useEffect(() => {
-    if (!terminalRef.current) return;
-
-    term.open(terminalRef.current);
+    // Open the terminal in the DOM element
+    if (terminalRef.current) {
+      term.open(terminalRef.current);
+    }
 
     term.onResize(({ cols, rows }) => {
       ws.send(
@@ -55,7 +63,17 @@ function XTerminal() {
       );
     });
 
-  },[terminalRef])
+    // when the component unmounts
+    // close the ws connection and dispose the terminal 
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (termRef.current) {
+        termRef.current.dispose();
+      }
+    };
+  }, [terminalRef]);
 
   return (
     <div ref={terminalRef} style={{ width: "100%", height: "100%" }}></div>
