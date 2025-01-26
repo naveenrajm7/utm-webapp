@@ -24,13 +24,10 @@ wss.on("connection", async (ws, req) => {
 
   var vmUUID = urlParams.get('vmUUID');
   
-
   if (!vmUUID) {
-    // log("VM UUID not provided");
-    // Hard code the VM UUID for testing
-    vmUUID = "5D28BFD8-AB32-46A7-8BE4-123892B7A9C3";
-    // ws.close();
-    // return;
+    log("VM UUID not provided");
+    ws.close();
+    return;
   }
 
   log(`WebSocket connection established for VM: ${vmUUID}`);
@@ -78,6 +75,7 @@ wss.on("connection", async (ws, req) => {
     ptyProcess.kill("SIGTERM"); // Gracefully kill the screen process
     // TODO: Screen still exists after the ws connection is closed
     // This causes the terminal to be garbled when a new ws connection is established
+    // Manual `screen -XS <screen_id> quit` to kill the screen process
   });
 
 });
