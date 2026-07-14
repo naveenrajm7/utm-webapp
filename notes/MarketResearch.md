@@ -280,3 +280,169 @@ The path to revenue:
 ---
 
 *Research compiled July 2026 · Sources: Technavio, Grand View Research, VDF AI 2026 Report, Zylos Research, engine.build, AgentMarketCap, BuySellRam, Crunchbase, AlleyWatch, SiliconANGLE, PRNewswire, GitHub (utmapp/UTM, LocalSandBox/local-sandbox, shuru.run)*
+
+---
+
+## 9. Monetization Playbook for an Open-Source Infrastructure Project
+
+> **The core question:** "I keep the code open. How do I make money?"
+> 
+> **The short answer:** You never sell the code. You sell what is hard to do yourself: pre-built artifacts, operational convenience, organizational-scale features, and your time. The code being free is the marketing budget.
+
+### 9.1 How Open-Core Works in Practice (No Secret Code Required)
+
+The most common misconception: enterprise monetization requires a "private version" with features hidden from the community. It does not. The most successful open-source infrastructure companies (HashiCorp, Grafana, GitLab, Nextcloud) keep 100% of the core software public and free. They monetize *around* it:
+
+```
+                 ┌─────────────────────────────────────┐
+                 │   OPEN SOURCE CORE (Apache 2.0)     │
+                 │   - Web UI                          │
+                 │   - VM list / start / stop / info   │
+                 │   - Serial terminal                  │
+                 │   - VNC viewer                       │
+                 │   - Basic REST API                   │
+                 └──────────────────┬──────────────────┘
+                                    │  free, always
+          ┌─────────────────────────┼─────────────────────────┐
+          ▼                         ▼                         ▼
+  Pre-built artifacts        Paid hosted tier          Enterprise add-ons
+  (VM image downloads)     (you run the Macs)       (RBAC, audit, SSO)
+  One-time or sub $          Monthly/usage $          Per-seat or site $
+```
+
+**E2B's exact model as the reference:** Their entire infrastructure is Apache 2.0 on GitHub (e2b-dev/infra, 1,200+ stars). Anyone can self-host it. Despite that, E2B runs a $150/month Pro cloud tier and custom Enterprise plans, has 94% Fortune 100 penetration, and is raising a Series B. The open code is the funnel — it proves trust, drives adoption, and converts the fraction of users who need managed convenience or organizational features.
+
+---
+
+### 9.2 The Five Revenue Streams (Ranked by Ease of Starting)
+
+#### Stream 1 — Pre-built VM Image Downloads
+**What it is:** Curated `.utm` bundle files with everything pre-installed — OS, agent frameworks, LLMs, tooling. Users download, import into UTM, and have a ready-to-run AI agent VM in minutes instead of hours.
+
+**How to charge:** Freemium. One free base image (e.g., `ubuntu-24.04-arm64-base`) to drive community. Paid images at $15–$30 one-time, or an "Image Pack" subscription at $9–$19/month that includes quarterly updates, new agent-specific variants, and access to a private image registry.
+
+**Why it works:** Building a properly configured UTM image is genuinely hard and time-consuming — getting UTM network configuration, SPICE display, ARM64 driver compatibility, and agent toolchains all working takes hours. Users will pay $15 to avoid that. This is pure margin — you build the image once, serve it from GitHub Releases or S3.
+
+**Example image catalog:**
+| Image | Contents | Price |
+|---|---|---|
+| `utm-ubuntu-24.04-arm64` | Clean Ubuntu ARM64 | Free |
+| `utm-agent-python` | Python 3.12 + uv + Claude Code + Ollama + Playwright | $19 |
+| `utm-agent-node` | Node 22 + TypeScript + Cursor agent + npx tools | $19 |
+| `utm-agent-fullstack` | All of the above + browser GUI + noVNC pre-wired | $29 |
+| `utm-agent-airgapped` | Python + local Qwen 2.5 7B baked in, no internet needed | $39 |
+
+**Effort to start:** Low. Build one image, write a README, put it on GitHub Releases with a Gumroad or Stripe payment link. This can be live within a week.
+
+**Revenue potential:** At 500 downloads/month (realistic for a project with 1,000 GitHub stars) × $20 average = **$10,000/month** with near-zero ongoing cost.
+
+---
+
+#### Stream 2 — Enterprise Feature Add-ons (Open Core)
+**What it is:** The core web app stays 100% free. A separate, commercially licensed module (a plugin or a separate package) adds features that only matter at organizational scale.
+
+**Specifically what to gate:**
+- **Multi-user RBAC** — role-based access control (admin / operator / viewer), with per-user VM permissions
+- **Audit log** — append-only log of every VM action (who started, stopped, connected, when) exportable as JSON/CSV
+- **SSO / SAML** — single sign-on integration (Okta, Google Workspace, Azure AD)
+- **Fleet management** — multi-host dashboard (managing 2+ Mac minis from one UI)
+- **API key management** — issue scoped API keys for CI/CD pipelines and agent SDKs
+- **Compliance export** — pre-formatted reports for SOC 2, HIPAA audit evidence
+
+**The framing:** The free version is for a developer running one Mac for themselves. The enterprise module is for a team of 5+ people, or a company running 3+ Macs. Individual users never hit the enterprise features. Organizations hit all of them immediately.
+
+**How to charge:** Annual subscription, per-host:
+- Team ($49/month per Mac host, up to 5 users) — RBAC + audit log + API keys
+- Enterprise ($149/month per Mac host, unlimited users) — all of the above + SSO + compliance export + priority support
+
+**This is not a "secret private repo."** The enterprise features can be a separate `utm-webapp-enterprise` npm package with a commercial license. The core remains Apache 2.0. This is exactly how Grafana, Mattermost, and Nextcloud operate.
+
+**Revenue potential:** 50 paying team customers × $49/month × 2 hosts average = **$4,900/month** to start. At 200 enterprise customers, this becomes $30K–$50K/month.
+
+---
+
+#### Stream 3 — Hosted "Mac Agent Cloud" (Managed Service)
+**What it is:** You operate physical Mac minis (or Mac Studios) in a colocation facility. Customers get a browser URL, log in, and have their own UTM control plane backed by dedicated Apple Silicon hardware they never touch.
+
+**Why this is uniquely defensible:** Unlike renting a VPS on AWS, you physically cannot run UTM/macOS on a Linux hypervisor. This is hardware-native. The only way to offer "managed UTM cloud" is to own the hardware. That is a moat.
+
+**The existing market:** MacStadium and MacInCloud already rent Mac hardware. They charge $89–$199/month for a bare Mac mini. Your product wraps that hardware with the UTM control plane, pre-loaded agent images, and a developer-friendly API. You are selling **"E2B ergonomics on dedicated Apple Silicon hardware"**, not just a raw Mac rental.
+
+**Pricing model:**
+- Base: $149/month per M4 Mac mini (16GB) — UTM Web App UI included, 3 concurrent VMs
+- Pro: $299/month per M4 Pro (48GB) — up to 12 concurrent VMs, GPU-capable workloads
+- API access: +$49/month for programmatic VM lifecycle API
+- Usage: included within VM concurrency limits; no per-second billing surprises
+
+**Effort to start:** Higher capital investment (hardware + colo). But you can start with 2–3 Mac minis in a colocation rack for ~$500/month in colo fees + $4,000 hardware. At $149/host/month and 5 customers each using 1 host, you are at $745/month — break-even is reached at ~8 customers.
+
+**Revenue potential:** 50 customers × $200 average = **$10,000/month recurring**. 200 customers × $200 = $40K/month. This scales with hardware investment.
+
+---
+
+#### Stream 4 — Developer SDK with a Commercial Tier
+**What it is:** The REST API that today wraps `utmctl` becomes a published, documented SDK — TypeScript and Python — with a free community tier and a paid tier for production use.
+
+**The free SDK** (open source): spin up / stop / list VMs on your local UTM installation. No rate limits. Self-hosted.
+
+**The paid SDK tier** ($29/month per developer): 
+- Connects to your managed Mac cloud (Stream 3) *or* your self-hosted fleet
+- Includes snapshot/restore API
+- VM templates API (pull from the image catalog)
+- Webhook support (notify your app when VM reaches `started` / `stopped`)
+- SLA on SDK stability (no breaking changes without 90-day notice)
+
+**The MCP server angle:** Shipping the control plane as an MCP (Model Context Protocol) server means Claude Code, Cursor, and GitHub Copilot can call `create_vm`, `run_command`, `destroy_vm` as native tool calls. This is the **exact integration layer** that makes your project indispensable to every AI agent framework user on Mac. It is also a strong distribution channel — list on the MCP server registry, show up in Cursor's marketplace, etc.
+
+**Revenue potential:** Modest initially. SDK subscriptions at scale (1,000 developers × $29/month) = **$29,000/month**. More realistically in year one: 100 × $29 = $2,900/month. The SDK is primarily a retention and distribution mechanism — it locks in users and feeds them into the managed hosting tier.
+
+---
+
+#### Stream 5 — Professional Services and Setup
+**What it is:** Charge for your time to help teams deploy the stack correctly. This is the simplest monetization that requires no additional code.
+
+**Service offerings:**
+- **"Mac AI Farm Setup"** — you set up a client's Mac mini cluster with UTM Web App, configure the network, pre-load their images, and document everything ($2,000–$5,000 flat fee)
+- **"Agent VM Architecture Review"** — 2-hour async review of their agent isolation strategy, written report with recommendations ($500)
+- **"Compliance Readiness Pack"** — document their UTM deployment for SOC 2 / HIPAA audit evidence, write the policies ($1,500–$3,000)
+- **Priority support retainer** — async Slack/email support, 24-hour response SLA ($299/month)
+
+**Revenue potential:** 3–5 setup projects/month at $3,000 average = **$9,000–$15,000/month**. This is the fastest path to $10K+ revenue with no upfront investment but it does not scale without hiring.
+
+---
+
+### 9.3 What to Do First (Ordered by ROI on Your Time)
+
+| Order | Action | Revenue upside | Time to first dollar |
+|---|---|---|---|
+| 1 | Build and sell one pre-built VM image | $500–$5,000/month | 1–2 weeks |
+| 2 | Add a "Professional Services" page to the README | $2,000–$10,000/month | 1 day |
+| 3 | Build the enterprise RBAC + audit log module | $5,000–$30,000/month | 4–8 weeks |
+| 4 | Launch the SDK + MCP server (free) | Distribution / retention | 2–4 weeks |
+| 5 | Launch managed Mac hosting (1–2 machines) | $1,000–$10,000/month | 4–8 weeks |
+
+**The correct first step is Stream 1** (pre-built images) because it requires no new infrastructure, no sales calls, and generates recurring income. You can do it this week. The second step is to put a "Hire the maintainer" link in the README — consulting inquiries will come naturally as the project grows.
+
+---
+
+### 9.4 What "Enterprise Compliance Tier" Specifically Means
+
+To directly answer the question: you do **not** need a hidden private version. The compliance tier is a **commercially licensed add-on package** that installs alongside the open-source core. It contains:
+
+1. **Audit trail** — every VM lifecycle event stored with timestamp, user identity, IP address, and action. Exportable for auditors.
+2. **RBAC** — role-based access so a compliance officer can grant "view-only" to auditors, "operator" to developers, and "admin" only to infra leads.
+3. **Compliance report generator** — pre-formatted JSON/PDF output that maps UTM Web App activity to specific HIPAA §164.312, SOC 2 CC6, or ISO 27001 A.12 controls.
+4. **Retention policy enforcement** — automatically wipe VM snapshots older than N days (data lifecycle compliance).
+
+**Why enterprises pay for this even though the core is free:** A Fortune 500 security team cannot go to their CISO and say "we run this free tool with no audit capability." They need evidence. The compliance add-on gives them the paper trail they need for their annual audit. The open-source code being auditable actually *helps* here — enterprises trust open infrastructure more than black-box SaaS.
+
+**Pricing precedent:**
+- Grafana Enterprise (compliance + SAML + audit): $200+/month per instance
+- Nextcloud Enterprise (audit + LDAP + compliance): €36/user/year
+- Mattermost Enterprise: $10/user/month
+
+For UTM Web App, $49–$149/month per Mac host is conservative and competitive.
+
+---
+
+*Monetization section added July 2026*
