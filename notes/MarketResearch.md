@@ -824,3 +824,86 @@ Fireworks AI is **not a competitor** and **not in your exact layer** — it's th
 ---
 
 *Fireworks AI case study added July 2026*
+
+---
+
+## 12. Competitor Deep-Dive: microsandbox
+
+> **What it is:** [microsandbox](https://github.com/microsandbox/microsandbox) (by Zerocore AI / "superradcompany," YC-backed, Apache 2.0, ~7k GitHub stars) is a **local-first microVM runtime** for running untrusted workloads — AI agents, user code, plugins, CI jobs, scrapers. It is the most direct-looking "competitor" to our project, so it's worth understanding precisely where we overlap and where we diverge.
+
+### 12.1 How microsandbox Works
+
+- **Isolation:** Hardware-isolated microVMs via **libkrun** (KVM on Linux, Apple's Hypervisor.framework on macOS ARM64). Each sandbox gets its own minimal Linux kernel — true VM-level isolation, not shared-kernel containers.
+- **Speed:** Boot times under ~100ms. Purpose-built for fast, high-frequency, ephemeral execution.
+- **Packaging:** OCI-compatible — runs standard Docker/OCI images unmodified. Familiar `image / command / shell / volume` workflows via a `Sandboxfile` and an `msb` CLI.
+- **Interface:** SDK-first (Python, TypeScript, Rust) — spin up a VM in-process, no long-running daemon required. Plus an MCP server and Agent Skills so Claude Code, Cursor, Codex, Gemini, Copilot can drive it.
+- **Security extras:** Secret injection where the real key never enters the VM; programmable networking (DNS interception, domain allowlists); SSRF protection.
+- **Model:** Ephemeral-first (create → run → auto-cleanup), with an optional detached/long-running mode.
+
+**In one line:** microsandbox is a *fast, embeddable, ephemeral Linux code-execution sandbox* — the local-first, self-hosted analog of E2B.
+
+### 12.2 Where We Overlap
+
+Both projects: run on Mac (Apple Silicon), provide VM-level (not container) isolation, are open-source, self-hosted / local-first, expose an MCP server so AI agents can self-serve environments, and target the "secure sandbox for AI agents" use case with a privacy/sovereignty angle.
+
+Superficially that looks like head-to-head competition. It is not — the execution profiles are fundamentally different.
+
+### 12.3 Where We Fundamentally Differ
+
+| Dimension | microsandbox | UTM Web App |
+|---|---|---|
+| Virtualization | libkrun microVM (minimal Linux kernel) | UTM/QEMU full VM |
+| Guest OS support | **Linux only** (OCI images) | **Linux, Windows, macOS**, + 30 architectures (ARM, x86, RISC-V…) |
+| Boot speed | ~100ms (its core strength) | Seconds (full VM) |
+| Persistence | Ephemeral-first (cleanup after run) | Persistent, stateful, long-lived VMs |
+| GUI / desktop | Headless only (code execution) | **Full desktop via VNC + serial terminal** |
+| Human interface | CLI + SDK (developer-embedded) | **Browser-based management dashboard** (Proxmox-style) |
+| Remote access | Local / embedded in your process | **Accessible from any browser, anywhere** |
+| Density | Very high (lightweight microVMs) | Lower (heavier full VMs) |
+| OCI/Docker images | Runs them directly | Requires building/importing VM images |
+| Primary user | Developer embedding a sandbox in their app | Operator managing a VM fleet + agents via MCP |
+| Fleet / multi-host | Single-machine runtime | Multi-Mac fleet orchestration (roadmap) |
+| Maturity of base | New purpose-built Rust stack | Built on UTM — the mature, 28k-star Mac VM standard |
+
+### 12.4 What We Can Solve That microsandbox Cannot
+
+These are structural gaps — things microsandbox's architecture *cannot* address without becoming a different product:
+
+1. **macOS and Windows agents.** microsandbox runs Linux OCI images only. If you want an agent that operates a **real macOS environment** — driving Xcode, Safari, native Mac apps, the iOS Simulator, or notarized Mac software in isolation — libkrun/OCI simply can't do it. UTM boots **macOS guests on Apple Silicon** and Windows guests. This is the literal meaning of "**Mac agents**": agents that use a Mac, not just a Linux box on a Mac. It is our single biggest structural moat.
+
+2. **GUI / computer-use agents.** Many agent tasks are visual — browser automation, clicking through desktop apps, testing GUIs. microsandbox is headless. UTM Web App ships a **VNC viewer and serial terminal**, so an agent (or a human supervising it) gets a full graphical desktop it can see and control.
+
+3. **A human-operable control plane.** microsandbox has no dashboard — it's SDK/CLI, meant to be invisible inside your code. UTM Web App is a **browser UI** where a person can see every VM, its status, start/stop it, and connect to it. This matters for operations, debugging, compliance review, and for non-developers. It's the difference between a *library* and an *operable platform*.
+
+4. **Remote control from anywhere.** Because microsandbox is embedded and local, it lives where your code runs. UTM Web App's founding premise is "**access UTM from anywhere within your browser**" — spin up and control agent VMs on your home/office Mac from any device, anywhere. This is the "Mac agents = your private Cloud Agents" story from §10.
+
+5. **Persistent, long-horizon environments.** microsandbox is optimized for ephemeral spin-up-and-destroy. UTM VMs are **durable full machines** with real disk state that survive reboots — the right fit for an agent doing multi-day work, or an environment a team configures once and reuses.
+
+6. **Fleet orchestration across multiple Macs.** microsandbox is a single-machine runtime. Our roadmap (see `AgentInfrastructure.md`) is explicitly about the **infrastructure-orchestration layer** — scheduling agent VMs across a pool of Mac minis, quotas, audit, governance. That's a layer above what microsandbox targets.
+
+7. **Any-architecture emulation.** UTM/QEMU can emulate x86 on ARM, RISC-V, etc. — useful for cross-platform testing agents. microsandbox is native-arch only.
+
+### 12.5 Where microsandbox Is Genuinely Better (Be Honest)
+
+We should **not** try to beat microsandbox at its own game:
+
+- **Ephemeral Linux code execution speed** — libkrun's ~100ms boot and high density are purpose-built for "run this untrusted snippet, then throw it away." UTM/QEMU full VMs will never match that for rapid, high-frequency, short-lived tasks.
+- **Docker/OCI compatibility** — "just run this image" is a superb DX we can't easily match.
+- **Embeddability** — no daemon, SDK spins up a VM in-process. Cleaner for developers embedding execution into an app.
+
+If someone's need is "my agent generates a Python snippet and I want to run it safely in 100ms and discard it," microsandbox (or E2B) is the better tool. We should say so.
+
+### 12.6 Strategic Takeaway
+
+microsandbox and UTM Web App **look like competitors but occupy different execution profiles**, and the honest positioning is sharper for it:
+
+- **microsandbox = fast, ephemeral, headless Linux code sandboxes, embedded in your app.**
+- **UTM Web App = persistent, full-OS (incl. macOS/Windows/GUI), remotely-operable VM infrastructure with a management control plane and fleet orchestration.**
+
+Our differentiation is not "a better microVM." It's **the things a microVM can't be**: a real macOS/Windows machine, with a GUI, that a human can operate from anywhere, that persists, and that scales across a Mac fleet. We should lean *hard* into "**Mac agents that operate real Macs**" and "**the operable control plane**," and cede the fast-ephemeral-Linux-snippet niche to microsandbox/E2B rather than fighting a losing battle there.
+
+There's even a future where they're **complementary**: UTM Web App could orchestrate libkrun/microsandbox VMs as a fast Linux backend *alongside* full UTM VMs for macOS/Windows/GUI workloads — the control plane on top, multiple isolation backends underneath (the same "decouple lifecycle from isolation backend" pattern the Kubernetes agent-sandbox controller uses).
+
+---
+
+*microsandbox competitor deep-dive added July 2026*
