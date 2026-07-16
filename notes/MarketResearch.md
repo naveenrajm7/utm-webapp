@@ -446,3 +446,301 @@ For UTM Web App, $49–$149/month per Mac host is conservative and competitive.
 ---
 
 *Monetization section added July 2026*
+
+---
+
+## 10. The Mac Agents Platform Vision
+
+> **The question:** Can UTM Web App become the infrastructure layer that AI tools (Cursor, Claude Code, Copilot, etc.) use to spin up, assign tasks to, and run AI agents inside secure VMs on your Mac — a local equivalent of Cursor Cloud Agents?
+>
+> **Short answer:** Yes. The market is validated, the pattern is proven, the MCP plumbing is already standardized, and nobody has built it specifically for UTM. Here is the full analysis.
+
+---
+
+### 10.1 What Cursor Cloud Agents Showed the World
+
+On February 24, 2026, Cursor launched Cloud Agents. The concept was simple but paradigm-shifting:
+
+1. Open Cursor, describe a task in natural language
+2. Click "Run as Cloud Agent"
+3. Cursor spins up an isolated VM in the cloud, clones your repo, and the agent works autonomously
+4. You get a PR back with screenshots, logs, and test evidence attached
+
+Every developer who used it immediately thought: *"I want this, but on my own machine, for my private code."*
+
+That thought is the entire product opportunity. **Mac Agents = Cursor Cloud Agents, but the VMs run on your Mac hardware, your data never leaves, and you control the infrastructure.**
+
+---
+
+### 10.2 MCP Is the Plumbing That Makes It Real
+
+Model Context Protocol (MCP) is now the de-facto standard for connecting AI agents to external tools and infrastructure. The numbers as of July 2026:
+
+| Metric | Value |
+|---|---|
+| Monthly SDK downloads (npm + PyPI combined) | **~427 million** |
+| Public MCP servers across registries | **15,000–23,000+** |
+| Major AI tools with native MCP support | Claude, ChatGPT, Gemini, Copilot, Cursor, VS Code, Windsurf, Zed, Warp |
+| Enterprise AI teams using MCP | 67% using or actively evaluating |
+| AAIF governance members | ~190 (IBM, Oracle, Salesforce, SAP, Shopify, Snowflake, Docker, Datadog...) |
+
+The analyst description: *"MCP reached 97M monthly downloads and 10,000+ servers — numbers that took React roughly 3 years and gRPC 7 years to approach."* — AgentMarketCap, April 2026
+
+**What this means for your project:** If you ship an MCP server alongside the web UI, every AI tool that supports MCP — Cursor, Claude Code, Copilot, Windsurf, VS Code Agent Mode — can call your VM management API natively. The agent can request a VM the same way it reads a file or searches the web. No special integrations. No SDKs. Just MCP.
+
+---
+
+### 10.3 The Pattern Already Exists — Just Not for UTM
+
+Multiple projects have already proven that "VM lifecycle as MCP tools" works and is in demand:
+
+| Project | VM Backend | MCP Tools | Gap |
+|---|---|---|---|
+| `bird/sandbox-mcp` | Apple Virtualization.framework | create, run_command, destroy | Ephemeral microVMs only, no web UI, no templates |
+| `sandbox-forge-mcp` | Lima VMs (QEMU) | create_instance, run_command, destroy_instance | Dev-focused, no web UI, no agent image library |
+| `ProxmoxMCP-Plus` | Proxmox | create_vm, start_vm, stop_vm, snapshot, backup | Linux-only (Proxmox doesn't run on Mac) |
+| `vcenter-mcp` | VMware vCenter | create_vm, power_on, power_off, delete | Enterprise-only, requires vCenter server |
+| Kubernetes MCP | KubeVirt | vm_create, start, stop | Complex Kubernetes dependency |
+| Orkestr (hosted) | Cloud sandboxes | create_sandbox, run_shell, run_code | Cloud-only, data leaves your network |
+| **UTM Web App (yours)** | **UTM/QEMU on Mac** | **none yet — this is the gap** | **No MCP server exists for UTM** |
+
+The pattern is proven and in demand. The specific combination of UTM (the most popular Mac VM manager) + web UI + MCP server does not exist. You are building the obvious missing piece.
+
+---
+
+### 10.4 The Architecture: What "Mac Agents Platform" Looks Like
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Developer's Mac                              │
+│                                                                 │
+│  ┌─────────────────────────────────────────────┐               │
+│  │         UTM Web App (control plane)         │               │
+│  │                                             │               │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  │               │
+│  │  │  Web UI  │  │ REST API │  │MCP Server│  │               │
+│  │  │(browser) │  │/list_vms │  │create_vm │  │               │
+│  │  │          │  │/start    │  │start_vm  │  │               │
+│  │  │Dashboard │  │/stop     │  │run_cmd   │  │               │
+│  │  │VM list   │  │/run_cmd  │  │get_status│  │               │
+│  │  │Terminal  │  │/snapshot │  │destroy_vm│  │               │
+│  │  │VNC       │  │/clone    │  │          │  │               │
+│  │  └──────────┘  └──────────┘  └──────────┘  │               │
+│  └──────────────────────┬──────────────────────┘               │
+│                         │ utmctl / JXA / osascript              │
+│  ┌──────────────────────▼──────────────────────┐               │
+│  │                    UTM                      │               │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  │               │
+│  │  │  VM 1    │  │  VM 2    │  │  VM 3    │  │               │
+│  │  │agent-py  │  │agent-node│  │agent-full│  │               │
+│  │  │(Python + │  │(Node +   │  │(Browser  │  │               │
+│  │  │Claude    │  │Cursor    │  │+Playwright│  │               │
+│  │  │Code task)│  │agent)    │  │agent)    │  │               │
+│  │  └──────────┘  └──────────┘  └──────────┘  │               │
+│  └─────────────────────────────────────────────┘               │
+│                                                                 │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ MCP (JSON-RPC over stdio or HTTP)
+          ┌─────────────────┼──────────────────────┐
+          ▼                 ▼                       ▼
+       Cursor          Claude Code             Copilot / VS Code
+  "Create a Python   "Spin up a fresh       "Run this task in
+   VM and run this   sandbox and test       an isolated VM"
+   agent task in it"  this code"
+```
+
+This is the "Mac Agent Cloud." AI tools connect to your MCP server, request a VM, get a handle to run commands inside it, and tear it down when done. The entire execution stays on your hardware.
+
+---
+
+### 10.5 Specifically What MCP Tools to Build
+
+The MCP server for UTM Web App would expose these tools to any connected AI agent:
+
+```typescript
+// VM Lifecycle
+create_vm(template: string, name?: string, cpu?: number, memory_gb?: number)
+  → { vm_uuid, status }
+
+start_vm(vm_uuid: string)
+  → { status: "started" | "error" }
+
+stop_vm(vm_uuid: string, force?: boolean)
+  → { status: "stopped" }
+
+destroy_vm(vm_uuid: string)
+  → { status: "destroyed" }
+
+list_vms()
+  → { vms: [{ uuid, name, status, template, cpu, memory_gb }] }
+
+get_vm_status(vm_uuid: string)
+  → { status, cpu_usage, memory_used_gb, uptime_seconds }
+
+// Execution
+run_command(vm_uuid: string, command: string, timeout_seconds?: number)
+  → { stdout, stderr, exit_code }
+
+// File I/O (over SSH or serial)
+write_file(vm_uuid: string, path: string, contents: string)
+  → { success }
+
+read_file(vm_uuid: string, path: string)
+  → { contents }
+
+// Snapshots (clone the VM state for re-use)
+create_snapshot(vm_uuid: string, name: string)
+  → { snapshot_id }
+
+restore_snapshot(vm_uuid: string, snapshot_id: string)
+  → { status }
+
+// Terminal/Console (return a WebSocket URL)
+get_terminal_url(vm_uuid: string)
+  → { ws_url }  // connects to existing serial WebSocket bridge
+```
+
+An AI agent using these tools can do in a single session what used to take manual VM management:
+
+```
+Agent: I need to test this code in a clean environment.
+→ create_vm(template="agent-python") → vm_uuid = "abc-123"
+→ start_vm("abc-123")
+→ write_file("abc-123", "/workspace/task.py", "<generated code>")
+→ run_command("abc-123", "cd /workspace && python task.py")
+→ read_file("abc-123", "/workspace/output.json")
+→ destroy_vm("abc-123")
+Agent: Done. The output was: [...]
+```
+
+Cursor and Claude Code do exactly this pattern today — but in the cloud. Your MCP server lets them do it on your Mac.
+
+---
+
+### 10.6 What Makes This Different from Existing Local Sandbox Tools
+
+The tools that already exist (Shuru, LocalSandBox, bird/sandbox-mcp) are microVM runners — they boot ephemeral throwaway kernels in ~100ms. They are excellent for short-lived code execution sandboxes. But they are fundamentally different from what UTM Web App can offer:
+
+| Dimension | Microvm runners (Shuru, bird/sandbox-mcp) | UTM Web App as Mac Agents Platform |
+|---|---|---|
+| VM persistence | Ephemeral — state lost on exit | Persistent — VM state survives reboots |
+| OS support | Linux only (Virtualization.framework) | Any OS UTM supports (Linux, Windows, macOS) |
+| Pre-installed environments | Minimal rootfs | Rich pre-built images (agent-python, agent-fullstack, etc.) |
+| GUI/Display | Not supported | VNC viewer built-in |
+| Web dashboard | None | Full browser UI |
+| Multi-VM management | None | Fleet view, all VMs in one place |
+| Remote access | Localhost only | Accessible from anywhere via the web UI |
+| Task for agents | Ephemeral code execution | Long-running agentic work (hours/days) |
+
+The ephemeral microVM runners are for "run this snippet." UTM Web App as a Mac Agents Platform is for "run this agent on a project for the next 6 hours."
+
+---
+
+### 10.7 The Competitive Landscape Compared to "Mac Agent Cloud"
+
+The closest competitor to the exact vision is **Osaurus** (babyskill/osaurus):
+
+> *"Osaurus is the AI harness for macOS. Agents execute code in an isolated Linux VM powered by Apple's Containerization framework. Full dev environment — shell, Python, Node.js — with zero risk to your Mac. It's a full MCP server."*
+
+**Why Osaurus is not the same thing:**
+- It is an AI *harness* (the agent runtime), not an infrastructure *control plane*
+- Uses Apple's new Containerization framework (macOS 26+ only, very early)
+- No web UI, no dashboard, no fleet management
+- Designed to BE the agent, not to PROVIDE VMs TO agents
+- The VMs are attached to the app's lifecycle, not independently managed
+
+**Why the gap remains open:**
+- No project provides a browser-accessible VM management dashboard *plus* an MCP server *plus* a template image library *plus* persistent VM state — all in one, specifically for UTM on Mac.
+
+**The Cursor parallel:**
+- Cursor Cloud Agents = cloud VMs + agent + web UI to manage them
+- UTM Web App Mac Agents Platform = your Mac VMs + agent (via MCP, you bring the agent) + web UI to manage them
+
+The analogy to existing successful products:
+- **Proxmox** = Linux VM management web UI → multi-billion dollar product
+- **UTM Web App** = Mac VM management web UI + MCP = the Proxmox for Mac AI agent infrastructure
+
+---
+
+### 10.8 Is This Direction Successful? The Validation Signals
+
+**Demand signals that validate the direction:**
+
+1. Cursor Cloud Agents launched Feb 2026 and became one of Cursor's most-used features within weeks. The pain of "I want this but local" is well documented in developer communities.
+
+2. MCP VM/sandbox servers collectively have tens of thousands of installations: `bird/sandbox-mcp`, `sandbox-forge-mcp`, `ProxmoxMCP-Plus`, `vcenter-mcp` each have hundreds to thousands of users despite being niche tools with minimal marketing.
+
+3. Mac mini sales driven by AI infrastructure demand (out of stock in early 2026). Developers are already buying the hardware — they need the software layer.
+
+4. Multiple independent projects (Osaurus, Outlier, Ravl, OmniDev, LocalSandBox, Shuru) are all converging on "local Mac AI infrastructure." This isn't one team's bet — it is a market direction.
+
+5. Proxmox MCP servers exist and are actively maintained — this proves the "hypervisor web UI + MCP" combination is a real product pattern that people use in production.
+
+**Where UTM Web App wins specifically:**
+
+- It already has `utmctl` integration, VM listing, start/stop, serial terminal, and VNC — the hard parts
+- UTM is Apache 2.0, actively maintained by a large community, and the most popular Mac VM manager by far
+- The existing codebase is a working foundation — not starting from zero
+
+---
+
+### 10.9 What to Build and in What Order
+
+To execute on the "Mac Agents Platform" direction, here is the specific build sequence:
+
+**Step 1 — The MCP Server (2–4 weeks, highest leverage)**
+
+This single addition transforms the project from "UTM web UI" to "Mac Agents Platform." Add an MCP server (`apps/mcp/`) that wraps the existing REST API. Start with six tools: `list_vms`, `create_vm` (clone from template), `start_vm`, `stop_vm`, `run_command`, `destroy_vm`.
+
+Once this is live, Cursor, Claude Code, and every MCP-compatible AI tool can use your Mac's UTM VMs as their execution environment. This is the product.
+
+**Step 2 — The `run_command` implementation (2–3 weeks)**
+
+This is the critical missing capability. Today you have a serial terminal bridge (WebSocket) — this needs a synchronous `run_command` interface. Implementation: SSH into the VM and run the command, return stdout/stderr/exit_code. This requires:
+- SSH server pre-installed in VM images
+- API endpoint: `POST /run_command?uuid=<uuid>` with `{ command }` body, returns `{ stdout, stderr, exit_code }`
+- MCP tool wrapper
+
+**Step 3 — Clone from template (1–2 weeks)**
+
+`create_vm` in the MCP server needs to clone from a pre-built template. UTM supports VM cloning via `utmctl clone`. Add `POST /clone_vm?uuid=<template_uuid>&name=<name>` to the REST API, and wire it into the MCP `create_vm` tool.
+
+**Step 4 — Pre-built Agent Images (1–2 weeks per image)**
+
+Build and publish `.utm` bundle files with common agent environments. The `agent-python` image is the most important first one:
+- Ubuntu 24.04 ARM64
+- Python 3.12, uv, pip
+- Claude Code CLI, Cursor agent CLI
+- SSH server (for `run_command`)
+- Pre-configured network (UTM shared networking)
+- Ollama (optional, for fully local inference)
+
+**Step 5 — Remote HTTP MCP transport (1 week)**
+
+The MCP server needs to be accessible over HTTP (not just local stdio) so it can be used from a browser-based Cursor session or remotely. Implement the MCP Streamable HTTP transport. This lets the control plane be shared across a team — everyone connects their AI tools to the same UTM Web App MCP endpoint.
+
+---
+
+### 10.10 The Pitch
+
+This is how you describe the project in one paragraph for a landing page, HN post, or investor conversation:
+
+> **UTM Web App** is the Mac Agents Platform. Install it once on any Mac with UTM. Your AI tools — Cursor, Claude Code, Copilot — connect to it via MCP and can instantly spin up pre-built agent VMs, run tasks inside them, and tear them down when done. Every agent gets its own isolated Linux environment on your hardware. Your code never leaves your network. You pay for the Mac you already own, not per-second cloud billing. It's what Cursor Cloud Agents would be if they ran locally, with you in control.
+
+---
+
+### 10.11 Market Size for This Specific Angle
+
+| Segment | Size | Relevance |
+|---|---|---|
+| MCP SDK monthly downloads | **427M/month** (growing 4x in 6 months) | Every download is a potential user of any MCP server |
+| Cursor MAUs | ~4M+ (estimated from usage reports) | Direct channel for "replace Cloud Agents with local" |
+| Mac developer population | ~25M+ worldwide | The hardware-constrained total addressable market |
+| Private AI infra market | $33.7B growing at 18.7% CAGR | The broader tailwind |
+| UTM GitHub stars | 28,000+ stars | Existing community that knows and uses UTM |
+
+Even capturing 0.1% of Cursor's 4M users as paying customers (4,000 users × $15/month for the MCP-enabled tier) = **$60,000/month recurring**. At 1%, that's $600K/month. The MCP distribution channel makes this addressable at minimal marketing cost — list the MCP server in registries (Smithery, mcp.so, PulseMCP, the official registry) and it gets discovered organically by every developer configuring their AI tools.
+
+---
+
+*Mac Agents Platform section added July 2026*
