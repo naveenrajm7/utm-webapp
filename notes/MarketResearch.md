@@ -744,3 +744,83 @@ Even capturing 0.1% of Cursor's 4M users as paying customers (4,000 users × $15
 ---
 
 *Mac Agents Platform section added July 2026*
+
+---
+
+## 11. Case Study: Fireworks AI — What It Teaches Us
+
+> **Name check first:** The company you're thinking of is almost certainly **Fireworks AI** (often misheard as "Fireside"). On July 16, 2026 it announced $1B+ in annualized revenue and a $1.5B Series D at a $17.5B valuation (some outlets round to "$18B"). There is a separate company, **Fluidstack**, also around an $18B valuation — an AI *data-center* builder ($50B Anthropic deal). And "Fireside" is a Mark Cuban streaming app, unrelated. This section is about **Fireworks AI**.
+
+### 11.1 What Fireworks AI Actually Does
+
+Fireworks is an **AI inference platform** — a cloud service that hosts and serves open-source and custom AI models for developers, fast and cheaply. It competes with AWS/Google (for model hosting) and with Together AI. It is "the platform for specialized intelligence: train and serve custom models."
+
+| Fireworks AI — the numbers | |
+|---|---|
+| Annualized revenue | $1B+ (5x year-over-year) |
+| Latest round | $1.5B Series D |
+| Valuation | $17.5B (was $4B in Oct 2025 — ~4.4x in ~9 months) |
+| Tokens served/day | 40 trillion (up from 15T) |
+| Founded / team | 2022 by Lin Qiao (ex-Meta) + 6 co-founders; ~200 staff → 600 by end 2026 |
+| Backers | Nvidia, Sequoia, Atreides, Index Ventures, TCV, Lightspeed |
+| Notable customers | Cursor, Uber, Shopify, Doximity, Geico |
+
+### 11.2 Are They in Your Field? Partly — Adjacent Layer, Same Macro Wave
+
+The AI stack has distinct infrastructure layers. Fireworks and your project are **both "picks-and-shovels" infrastructure, but at different layers**:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Layer 6  Applications ............... Cursor, Perplexity  │
+├──────────────────────────────────────────────────────────┤
+│ Layer 5  Agent intelligence orch. ... kagent, LangGraph   │
+├──────────────────────────────────────────────────────────┤
+│ Layer 4  Agent execution substrate .. E2B, Daytona,       │
+│          (compute where agents RUN)    ★ UTM Web App ★     │  ← YOU
+├──────────────────────────────────────────────────────────┤
+│ Layer 3  Models ..................... GPT, Claude, Llama   │
+├──────────────────────────────────────────────────────────┤
+│ Layer 2  Model inference/serving .... ★ Fireworks AI ★,    │  ← FIREWORKS
+│          (turning models into tokens)  Together AI         │
+├──────────────────────────────────────────────────────────┤
+│ Layer 1  Compute / data centers ..... Fluidstack, neoclouds│
+└──────────────────────────────────────────────────────────┘
+```
+
+- **Fireworks = Layer 2** (inference: it turns a model into a stream of tokens over an API).
+- **UTM Web App = Layer 4** (execution substrate: it provides the isolated VM where an agent lives and works).
+
+They are **not competitors — they are complementary**. An AI agent running inside one of your UTM VMs needs a model to think with. It could call Fireworks for cheap open-model inference, or run a local model on the Mac. You provide the *body* (the environment); Fireworks (or a local Ollama) provides the *brain* (the tokens).
+
+**So: adjacent, not the same. But riding the exact same wave** — the shift toward open/customized models and cost-controlled, specialized AI infrastructure.
+
+### 11.3 The Five Lessons Worth Internalizing
+
+**Lesson 1 — Infrastructure is where enormous value accrues, and you don't have to build the agent.**
+Fireworks went from $4B to $17.5B in nine months without building a single agent or frontier model. It sells the layer *underneath* the intelligence. This is a direct validation of your entire thesis (see `AgentInfrastructure.md`): owning a substrate layer is a legitimate, massive business. Investors are "aggressively pricing infrastructure picks-and-shovels exposure to the AI buildout."
+
+**Lesson 2 — The open-model / cost / privacy trend is the engine, and it's the same engine that powers YOUR play.**
+Fireworks' growth is explicitly attributed to *"companies increasingly complementing frontier closed models with open models customized for their own data, workflows, and use cases."* Open-source model usage tripled industry-wide in twelve months. That same force — teams wanting control, lower cost, and data sovereignty — is exactly what makes local Mac agent infrastructure attractive. You are betting on the same macro trend, one layer up.
+
+**Lesson 3 — Specialization beats generalization.**
+Fireworks didn't try to be AWS. It specialized in *fast, cheap inference of open models* and won a category hyperscalers were too generic to serve well. Your equivalent: don't try to be E2B/Daytona (generic cloud sandboxes). Specialize in the one thing they *cannot* do — **Apple Silicon / UTM VM orchestration on hardware the customer owns.** The narrower, defensible specialization is the moat.
+
+**Lesson 4 — Customer concentration is a real risk to manage.**
+As recently as last year, ~50% of Fireworks' revenue came from a single customer (Cursor). They survived and thrived only because they *diversified* into Uber, Shopify, Geico, etc. before that dependency became fatal. For you: if your first traction comes from one AI tool's users or one enterprise, treat diversification as a priority, not an afterthought.
+
+**Lesson 5 — Timing and the demand curve.**
+Fireworks rode the *inference* demand curve at exactly the right moment (tokens served went 15T → 40T/day). The equivalent curve for you is the **agent-execution demand curve** — the number of isolated environments agents need to run in. Cursor Cloud Agents, the sandbox startups (E2B, Daytona, Sail at $80M), and the MCP explosion (427M downloads/month) are all early indicators that this curve is bending upward now. Being early on the *Mac* side of it is the opportunity.
+
+### 11.4 The Honest Caveats (How You Differ From Fireworks)
+
+- **Capital intensity:** Fireworks' model touches GPUs and huge token volumes — capital-heavy, but with a clear usage-metered revenue meter. Your local-Mac model is **capital-light and high-margin** (software running on the customer's own hardware), which is great for margins and bootstrapping, but it means you don't capture per-token compute revenue the way an inference cloud does. Your revenue comes from software/subscriptions/images/hosting (see §9), not from metering compute you own.
+- **TAM shape:** Fireworks' TAM is "every developer serving a model" — enormous and horizontal. Yours is "teams running agents on Mac hardware" — narrower and vertical, but far less contested and more defensible.
+- **Velocity expectation:** Fireworks' 4.4x-in-9-months trajectory is a venture-scale, capital-fueled outlier. A realistic path for a Mac-substrate open-core project looks more like the GitLab/Grafana community-to-commercial arc than the Fireworks inference-rocket arc. That's fine — it's a different, lower-risk shape of success.
+
+### 11.5 Bottom Line
+
+Fireworks AI is **not a competitor** and **not in your exact layer** — it's the inference layer, you're the execution-substrate layer. But it is the single best recent proof point that **your strategic instinct is correct**: the money, the valuations, and the investor conviction are flowing to *infrastructure that enables agents*, not just to agents themselves. Fireworks validates the "picks-and-shovels" thesis at Layer 2; E2B/Daytona/Sail validate it at Layer 4 (your layer). The specific, uncontested slice of Layer 4 that nobody has claimed is **Apple Silicon / Mac.** That is the wedge to own.
+
+---
+
+*Fireworks AI case study added July 2026*
