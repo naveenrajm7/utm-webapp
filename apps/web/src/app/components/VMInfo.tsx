@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import styles from './VMInfo.module.css';
+import { getApiHost } from '../config';
 
 interface VMInfoProps {
   uuid: string;
@@ -23,7 +23,7 @@ const VMInfo: React.FC<VMInfoProps> = ({ uuid }) => {
     if (!uuid) return;
 
     setLoading(true);
-    fetch(`http://localhost:3001/vm_info?uuid=${uuid}`)
+    fetch(`${getApiHost()}/vm_info?uuid=${uuid}`)
       .then(response => response.json())
       .then(data => {
         setVmConfig(data);

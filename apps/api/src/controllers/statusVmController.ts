@@ -1,38 +1,25 @@
 import { Request, Response } from "express";
-import { exec } from "child_process";
 import { log } from "@repo/logger";
+import { isValidUuid, runJxa } from "../utils/runJxa";
 
-export const statusVm = (req: Request, res: Response) => {
+export const statusVm = async (req: Request, res: Response) => {
   const { uuid } = req.query;
 
-  if (!uuid) {
-    return res.status(400).json({ status: "error", message: "UUID is required" });
+  if (!isValidUuid(uuid)) {
+    return res.status(400).json({ status: "error", message: "A valid UUID is required" });
   }
 
-  const command = `utmctl status ${uuid}`;
+  try {
+    const result = await runJxa("vm_control.js", ["status", uuid]);
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      log(`Error executing command: ${stderr}`);
-      return res.status(500).json({ status: "error", message: stderr });
+    if (result.status === "error") {
+      log(`Error getting status for ${uuid}: ${result.message}`);
+      return res.status(500).json(result);
     }
 
-    // Log the output of the command
-    log(`Command output: ${stdout}`);
-
-    // Check the output and determine the status
-    const output = stdout.toLowerCase();
-    let vmStatus = "unknown";
-
-    if (output.includes("started")) {
-      vmStatus = "started";
-    } else if (output.includes("stopped")) {
-      vmStatus = "stopped";
-    }
-
-    // Log the determined status
-    log(`Determined VM status: ${vmStatus}`);
-
-    return res.json({ status: "success", vmStatus });
-  });
+    log(`VM ${uuid} status: ${result.vmStatus}`);
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ status: "error", message: (error as Error).message });
+  }
 };

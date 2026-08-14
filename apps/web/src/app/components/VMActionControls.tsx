@@ -1,45 +1,53 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { getApiHost, getTerminalHost } from '../config';
 
 const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   const [vmStatus, setVmStatus] = useState<string>('stopped'); // Default status
 
+  const fetchVmStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${getApiHost()}/status_vm?uuid=${vmUUID}`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch VM status: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setVmStatus(data.vmStatus);
+    } catch (error) {
+      console.error("Error fetching VM status:", error);
+      // Set a fallback status in case of error
+      setVmStatus('unknown');
+    }
+  }, [vmUUID]);
+
   // Fetch the VM status on mount or when vmUUID changes
   useEffect(() => {
-    const fetchVmStatus = async () => {
-      try {
-        // Replace this URL with your actual API endpoint
-        const response = await fetch(`http://127.0.0.1:3001/status_vm?uuid=${vmUUID}`);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch VM status: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        // Assuming the API response contains a "vmStatus" field
-        setVmStatus(data.vmStatus);
-      } catch (error) {
-        console.error("Error fetching VM status:", error);
-        // Set a fallback status in case of error
-        setVmStatus('unknown');
-      }
-    };
-
     fetchVmStatus();
-  }, [vmUUID]); // Re-run when vmUUID changes
+  }, [fetchVmStatus]);
 
   // Actions
-  const handlePlay = () => {
-    console.log(`Starting VM: ${vmUUID}`);
-    // Add logic to start VM
-    setVmStatus('running');
+  const runVmAction = async (action: 'start' | 'stop') => {
+    try {
+      const response = await fetch(`${getApiHost()}/${action}?uuid=${vmUUID}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || response.statusText);
+      }
+
+      setVmStatus(data.vmStatus);
+    } catch (error) {
+      console.error(`Error running ${action} on VM:`, error);
+    }
+
+    // UTM reports transitional states, so settle on the real one shortly after.
+    setTimeout(fetchVmStatus, 2000);
   };
 
-  const handleStop = () => {
-    console.log(`Stopping VM: ${vmUUID}`);
-    // Add logic to stop VM
-    setVmStatus('stopped');
-  };
+  const handlePlay = () => runVmAction('start');
+
+  const handleStop = () => runVmAction('stop');
 
   const handleDelete = () => {
     console.log(`Deleting VM: ${vmUUID}`);
@@ -59,7 +67,7 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   const handleConnect = () => {
     console.log(`Connecting to VM via Serial: ${vmUUID}`);
     // Add logic to connect to VM
-    window.open(`http://localhost:3002?vmUUID=${vmUUID}`, '_blank');
+    window.open(`${getTerminalHost()}?vmUUID=${vmUUID}`, '_blank');
   };
 
   const handleVNC = () => {
