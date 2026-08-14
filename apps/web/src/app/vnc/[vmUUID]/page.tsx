@@ -1,18 +1,19 @@
 "use client";
 
-import { useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import VNCViewer from '../../components/VNCViewer';
+import { getApiWebSocketHost } from '../../config';
 
 const VNCViewerPage: React.FC = () => {
-  const searchParams = useSearchParams();
-  const vmUUID = searchParams.get('vmUUID');
+  const params = useParams<{ vmUUID: string }>();
+  const vmUUID = params?.vmUUID;
 
-  console.log(vmUUID);
-  // if (!vmUUID) {
-  //   return <div>Loading...</div>;
-  // }
+  if (!vmUUID) {
+    return <div>No VM specified</div>;
+  }
 
-  const vncUrl = `ws://localhost:15901`; // Replace with your VNC server URL
+  // The API resolves which VNC port this VM uses and relays it over WebSocket.
+  const vncUrl = `${getApiWebSocketHost()}/vnc?vmUUID=${vmUUID}`;
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>

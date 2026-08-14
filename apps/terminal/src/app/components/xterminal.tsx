@@ -24,8 +24,12 @@ function XTerminal() {
     });
     termRef.current = term;
 
-    // Create a new WebSocket connection
-    const ws = new WebSocket(`ws://localhost:3001?vmUUID=${vmUUID}`);
+    // The API serves its WebSocket on 3001 of whichever host served this page,
+    // so a hardcoded localhost would point at the viewer's own machine.
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const apiHost = process.env.NEXT_PUBLIC_API_WS_HOST || `${window.location.hostname}:3001`;
+
+    const ws = new WebSocket(`${scheme}://${apiHost}?vmUUID=${vmUUID}`);
     wsRef.current = ws;
 
     // on every message from ws, write it to the terminal

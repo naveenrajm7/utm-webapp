@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { API_HOST } from '../config';
+import { getApiHost } from '../config';
 
 interface VM {
   UUID: string;
@@ -17,7 +17,7 @@ const VMList: React.FC<VMListProps> = ({ onSelectVM }) => {
   const [activeVMUUID, setActiveVMUUID] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_HOST}/list_vms`)
+    fetch(`${getApiHost()}/list_vms`)
       .then(response => response.json())
       .then(data => {
         setVMs(data);

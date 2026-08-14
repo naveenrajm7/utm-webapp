@@ -1,22 +1,15 @@
-import { exec } from "child_process";
+import { isValidUuid, runJxa } from "./runJxa";
 
-export const getPtyDevice = (uuid: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const command = `utmctl attach ${uuid}`; // Replace with the actual command to get the pty device
+export const getPtyDevice = async (uuid: string): Promise<string> => {
+  if (!isValidUuid(uuid)) {
+    throw new Error("A valid UUID is required");
+  }
 
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        return reject(`Error getting pty device: ${stderr}`);
-      }
+  const result = await runJxa("vm_control.js", ["serial", uuid]);
 
-      // Extract the PTY device from the command output
-      const match = stdout.match(/PTTY:\s*(\/dev\/\w+)/);
-      if (match && match[1]) {
-        const ptyDevice = match[1].trim();
-        resolve(ptyDevice);
-      } else {
-        reject("PTY device not found in command output");
-      }
-    });
-  });
+  if (result.status === "error" || !result.address) {
+    throw new Error(result.message || "Serial port address not available");
+  }
+
+  return result.address;
 };
