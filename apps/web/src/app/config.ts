@@ -1,5 +1,4 @@
 const API_PORT = 3001;
-const TERMINAL_PORT = 3002;
 
 /**
  * These URLs are dialled by the browser, not the server, so "localhost" would
@@ -17,10 +16,7 @@ const sameHostAtPort = (port: number): string => {
 export const getApiHost = (): string =>
   process.env.NEXT_PUBLIC_API_HOST || sameHostAtPort(API_PORT);
 
-export const getTerminalHost = (): string =>
-  process.env.NEXT_PUBLIC_TERMINAL_HOST || sameHostAtPort(TERMINAL_PORT);
-
-/** The API bridges the VM's VNC display over WebSocket on the same port. */
+/** The API bridges the VM's serial console and VNC display over WebSocket. */
 export const getApiWebSocketHost = (): string => {
   const httpHost = getApiHost();
 
