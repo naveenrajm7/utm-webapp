@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { getApiHost, getTerminalHost } from '../config';
+import { getApiHost } from '../config';
 
 const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   const [vmStatus, setVmStatus] = useState<string>('stopped'); // Default status
@@ -65,14 +65,10 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   };
 
   const handleConnect = () => {
-    console.log(`Connecting to VM via Serial: ${vmUUID}`);
-    // Add logic to connect to VM
-    window.open(`${getTerminalHost()}?vmUUID=${vmUUID}`, '_blank');
+    window.open(`/terminal/${vmUUID}`, '_blank');
   };
 
   const handleVNC = () => {
-    console.log(`Connecting to VM via VNC: ${vmUUID}`);
-    // Add logic to connect to VM
     window.open(`/vnc/${vmUUID}`, '_blank');
   };
 

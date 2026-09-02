@@ -17,8 +17,11 @@ This Turborepo includes the following:
 
 ### Apps and Packages
 
-- `web`: a [Next.js](https://nextjs.org/) app - Main UI for UTM Web
+- `web`: a [Next.js](https://nextjs.org/) app - Main UI for UTM Web, including the
+  per-VM serial console (`/terminal/<uuid>`) and VNC display (`/vnc/<uuid>`).
 - `api`: an [Express](https://expressjs.com/) server - providing APIs to control UTM.
-- `terminal`: a [Next.js](https://nextjs.org/) app - providing terminal emulators for VM.
+
+The `api` runs on port 3001 and must run on the Mac hosting UTM, since it drives
+UTM through `osascript` and `screen`.
 
 
