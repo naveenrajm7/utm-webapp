@@ -1,8 +1,19 @@
 "use client";
 
 import { useParams } from 'next/navigation';
+import ApiKeyGate from '../../components/ApiKeyGate';
 import VNCViewer from '../../components/VNCViewer';
-import { getApiWebSocketHost } from '../../config';
+import { getAuthenticatedWebSocketUrl } from '../../apiAuth';
+
+const AuthenticatedVnc = ({ vmUUID }: { vmUUID: string }) => {
+  const vncUrl = getAuthenticatedWebSocketUrl("/vnc", { vmUUID });
+
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <VNCViewer url={vncUrl} />
+    </div>
+  );
+};
 
 const VNCViewerPage: React.FC = () => {
   const params = useParams<{ vmUUID: string }>();
@@ -12,13 +23,10 @@ const VNCViewerPage: React.FC = () => {
     return <div>No VM specified</div>;
   }
 
-  // The API resolves which VNC port this VM uses and relays it over WebSocket.
-  const vncUrl = `${getApiWebSocketHost()}/vnc?vmUUID=${vmUUID}`;
-
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <VNCViewer url={vncUrl} />
-    </div>
+    <ApiKeyGate>
+      <AuthenticatedVnc vmUUID={vmUUID} />
+    </ApiKeyGate>
   );
 };
 

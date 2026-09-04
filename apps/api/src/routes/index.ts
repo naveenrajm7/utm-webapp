@@ -9,8 +9,8 @@ const router = Router();
 
 router.get("/list_vms", listVMs);
 router.get("/vm_info", getVmInfo);
-router.get("/start", startVm);
-router.get("/stop", stopVm);
+router.post("/start", startVm);
+router.post("/stop", stopVm);
 // `status` seems to be a reserved route somewhere (express or websocket?)
 router.get("/status_vm", statusVm);
 

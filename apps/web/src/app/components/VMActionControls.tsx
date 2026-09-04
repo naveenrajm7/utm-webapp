@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { getApiHost } from '../config';
+import { apiFetch } from '../apiAuth';
 
 const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   const [vmStatus, setVmStatus] = useState<string>('stopped'); // Default status
 
   const fetchVmStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${getApiHost()}/status_vm?uuid=${vmUUID}`);
+      const response = await apiFetch(`/status_vm?uuid=${vmUUID}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch VM status: ${response.statusText}`);
@@ -29,7 +29,7 @@ const VMActionControls: React.FC<{ vmUUID: string }> = ({ vmUUID }) => {
   // Actions
   const runVmAction = async (action: 'start' | 'stop') => {
     try {
-      const response = await fetch(`${getApiHost()}/${action}?uuid=${vmUUID}`);
+      const response = await apiFetch(`/${action}?uuid=${vmUUID}`, { method: 'POST' });
       const data = await response.json();
 
       if (!response.ok) {
