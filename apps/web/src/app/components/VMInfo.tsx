@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApiHost } from '../config';
+import { apiFetch } from '../apiAuth';
 
 interface VMInfoProps {
   uuid: string;
@@ -23,8 +23,13 @@ const VMInfo: React.FC<VMInfoProps> = ({ uuid }) => {
     if (!uuid) return;
 
     setLoading(true);
-    fetch(`${getApiHost()}/vm_info?uuid=${uuid}`)
-      .then(response => response.json())
+    apiFetch(`/vm_info?uuid=${uuid}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch VM info: ${response.statusText}`);
+        }
+        return response.json();
+      })
       .then(data => {
         setVmConfig(data);
         setLoading(false);

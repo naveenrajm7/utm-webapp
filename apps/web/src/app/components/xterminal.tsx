@@ -3,7 +3,7 @@
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { getApiWebSocketHost } from "../config";
+import { getAuthenticatedWebSocketUrl } from "../apiAuth";
 
 interface XTerminalProps {
   vmUUID: string;
@@ -22,7 +22,7 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     termRef.current = term;
 
     // The API serves the serial console on its root WebSocket path.
-    const ws = new WebSocket(`${getApiWebSocketHost()}?vmUUID=${vmUUID}`);
+    const ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
     wsRef.current = ws;
 
     // on every message from ws, write it to the terminal

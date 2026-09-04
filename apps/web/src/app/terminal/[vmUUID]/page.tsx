@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from 'next/navigation';
+import ApiKeyGate from '../../components/ApiKeyGate';
 import XTerminal from '../../components/xterminal';
 
 const TerminalPage: React.FC = () => {
@@ -12,9 +13,11 @@ const TerminalPage: React.FC = () => {
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <XTerminal vmUUID={vmUUID} />
-    </div>
+    <ApiKeyGate>
+      <div style={{ width: '100vw', height: '100vh' }}>
+        <XTerminal vmUUID={vmUUID} />
+      </div>
+    </ApiKeyGate>
   );
 };
 

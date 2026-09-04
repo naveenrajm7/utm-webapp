@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApiHost } from '../config';
+import { apiFetch } from '../apiAuth';
 
 interface VM {
   UUID: string;
@@ -17,10 +17,10 @@ const VMList: React.FC<VMListProps> = ({ onSelectVM }) => {
   const [activeVMUUID, setActiveVMUUID] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${getApiHost()}/list_vms`)
-      .then(response => response.json())
-      .then(data => {
-        setVMs(data);
+    apiFetch('/list_vms')
+      .then(async (response) => {
+        const data = await response.json();
+        setVMs(Array.isArray(data) ? data : []);
         setLoading(false);
       })
       .catch(error => {

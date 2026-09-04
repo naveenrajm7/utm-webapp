@@ -5,11 +5,19 @@ A Web UI for UTM, access UTM from anywhere within your browser.
 
 ## Start 
 
-Run the following command:
+The api requires `UTM_API_KEY`. Generate a secret and export it before starting:
 
 ```sh
+export UTM_API_KEY="$(openssl rand -hex 32)"
 npm run dev
 ```
+
+The web UI will ask for that same key once per browser tab (stored in
+`sessionStorage`) and send it on every REST call and WebSocket.
+
+Start and stop are `POST /start` and `POST /stop`. `GET /status` is the only
+unauthenticated route (liveness).
+
 
 ## What's inside?
 

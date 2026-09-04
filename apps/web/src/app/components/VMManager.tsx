@@ -5,6 +5,7 @@ import VMList from './VMList';
 import VMInfo from './VMInfo';
 import VMActionControls from './VMActionControls';
 import WelcomeScreen from './WelcomeScreen';
+import { clearApiKey } from '../apiAuth';
 
 export default function VMManager() {
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -69,6 +70,13 @@ export default function VMManager() {
 
         {/* Icons Section */}
         {selectedVMUUID && <VMActionControls vmUUID={selectedVMUUID} />}
+        <button
+          className="btn btn-link text-white p-0 mx-2 ms-auto"
+          onClick={clearApiKey}
+          title="Lock"
+        >
+          <i className="bi bi-lock" style={{ fontSize: '1.5rem' }}></i>
+        </button>
       </header>
       <div className="d-flex" style={{ height: 'calc(100vh - 60px)' }}>
         <div ref={sidebarRef} className="sidebar flex-shrink-0" style={{ width: '300px' }}>
