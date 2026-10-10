@@ -30,9 +30,10 @@ export const useVmList = (): VmListState => {
     state: Job["state"];
   } | null>(null);
   const inFlight = useRef(false);
+  const powerInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current || powerInFlight.current) return;
     inFlight.current = true;
     try {
       const data = await listVms();
@@ -74,10 +75,12 @@ export const useVmList = (): VmListState => {
           setActionError(jobError(job));
           setPending(null);
           setBusyUuid(null);
+          powerInFlight.current = false;
           void refresh();
         } else if (job.state === "succeeded") {
           setPending(null);
           setBusyUuid(null);
+          powerInFlight.current = false;
           void refresh();
         } else {
           setPending((current) =>
@@ -94,6 +97,7 @@ export const useVmList = (): VmListState => {
         );
         setPending(null);
         setBusyUuid(null);
+        powerInFlight.current = false;
       } finally {
         checking = false;
       }
@@ -110,6 +114,7 @@ export const useVmList = (): VmListState => {
       if (!vm || !hasCapability(vm, action)) return;
       setActionError(null);
       setBusyUuid(uuid);
+      powerInFlight.current = true;
       try {
         const result = await powerVm(uuid, action);
         if (!result.jobId) throw new Error("The API did not return a job ID.");
@@ -121,6 +126,7 @@ export const useVmList = (): VmListState => {
             : `Could not ${action} the virtual machine`,
         );
         setBusyUuid(null);
+        powerInFlight.current = false;
         void refresh();
       }
     },

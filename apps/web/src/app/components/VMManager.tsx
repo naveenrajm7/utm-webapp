@@ -8,7 +8,6 @@ import VMActionControls from "./VMActionControls";
 import VMInfo from "./VMInfo";
 import VMList from "./VMList";
 import WelcomeScreen from "./WelcomeScreen";
-import SandboxPanel from "./SandboxPanel";
 
 export default function VMManager() {
   const {
@@ -142,7 +141,6 @@ export default function VMManager() {
           )}
           <div className="home-dashboard" hidden={Boolean(selected)}>
             <WelcomeScreen />
-            <SandboxPanel vms={vms} onInventoryChange={refresh} />
           </div>
         </main>
       </div>
