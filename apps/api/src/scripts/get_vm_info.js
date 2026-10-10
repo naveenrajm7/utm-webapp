@@ -20,7 +20,7 @@ function run(argv) {
   // Get the virtual machine by UUID
   const vm = utm.virtualMachines.byId(vmID);
   if (!vm) {
-    return JSON.stringify({ status: "error", message: `VM with UUID ${uuid} not found` });
+    return JSON.stringify({ status: "error", message: `VM with UUID ${vmID} not found` });
   }
 
   // Get the configuration of the virtual machine

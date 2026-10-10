@@ -100,4 +100,40 @@ describe("server", () => {
       });
     }
   });
+
+  it("rejects unknown WebSocket paths and invalid VM IDs", async () => {
+    const server = http.createServer(createServer());
+    attachWebSocketServer(server);
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = server.address() as AddressInfo;
+    try {
+      for (const path of [
+        "/unexpected?vmUUID=12345678-1234-1234-1234-123456789abc",
+        "/?vmUUID=not-a-uuid",
+        "/vnc?vmUUID=12345678-1234-1234-1234-123456789abc&extra=1",
+      ]) {
+        const ws = new WebSocket(
+          `ws://127.0.0.1:${port}${path}&token=${TEST_KEY}`,
+        );
+        const code = await new Promise<number>((resolve, reject) => {
+          const timer = setTimeout(
+            () => reject(new Error("WebSocket did not close")),
+            5000,
+          );
+          ws.on("close", (closeCode) => {
+            clearTimeout(timer);
+            resolve(closeCode);
+          });
+          ws.on("error", reject);
+        });
+        expect(code).toBe(1008);
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
 });
