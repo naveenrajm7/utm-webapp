@@ -5,10 +5,17 @@ export interface Vm {
   status: string;
   backend: string;
   capabilities: Record<string, boolean>;
+  network?: string;
+  memoryMiB?: number;
+  cpuCores?: number;
+  architecture?: string;
+  machine?: string;
+  serialPorts?: unknown;
+  drives?: unknown;
 }
 
 export interface HostCapabilities {
-  utmVersion: string;
+  utmVersion: string | null;
   features: Record<string, boolean>;
 }
 
@@ -33,7 +40,13 @@ export interface UtmPort {
   getVm(id: string): Promise<Vm>;
 }
 
-/** The sandbox/job service owns long-running work and approved-template checks. */
+export interface PowerPort {
+  startVm(id: string): Promise<JobRef>;
+  stopVm(id: string): Promise<JobRef>;
+  getJob(id: string): Promise<Job | null> | Job | null;
+}
+
+/** The sandbox service can be connected after VM power control is live. */
 export interface SandboxPort {
   startVm(id: string): Promise<JobRef>;
   stopVm(id: string): Promise<JobRef>;
@@ -55,4 +68,5 @@ export interface SandboxPort {
 export interface ApiPorts {
   utm: UtmPort;
   sandbox: SandboxPort;
+  power?: PowerPort;
 }

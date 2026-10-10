@@ -1,9 +1,17 @@
 import { Router, type Request, type Response } from "express";
 import { isValidUuid } from "../utils/runJxa";
-import type { ApiPorts, SandboxPort, UtmPort } from "./ports";
+import type { ApiPorts, PowerPort, SandboxPort, UtmPort } from "./ports";
 
 type ErrorCode =
   | "invalid_input"
+  | "invalid_argument"
+  | "not_managed"
+  | "unavailable"
+  | "timeout"
+  | "command_failed"
+  | "protocol_error"
+  | "output_limit"
+  | "utm_failure"
   | "not_found"
   | "unsupported"
   | "conflict"
@@ -12,6 +20,14 @@ type ErrorCode =
   | "internal";
 const statusForCode: Record<ErrorCode, number> = {
   invalid_input: 400,
+  invalid_argument: 400,
+  not_managed: 403,
+  unavailable: 503,
+  timeout: 504,
+  command_failed: 502,
+  protocol_error: 502,
+  output_limit: 502,
+  utm_failure: 502,
   not_found: 404,
   unsupported: 422,
   conflict: 409,
@@ -100,6 +116,7 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
   const router = Router();
   const utm = () => requirePort<UtmPort>(ports.utm);
   const sandbox = () => requirePort<SandboxPort>(ports.sandbox);
+  const power = () => requirePort<PowerPort>(ports.power ?? ports.sandbox);
 
   router.get(
     "/capabilities",
@@ -121,7 +138,7 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
     route(async (req, res) => {
       const id = vmId(req.params.id);
       hasOnly(objectBody(req.body), []);
-      res.status(202).json(await sandbox().startVm(id));
+      res.status(202).json(await power().startVm(id));
     }),
   );
   router.post(
@@ -129,7 +146,7 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
     route(async (req, res) => {
       const id = vmId(req.params.id);
       hasOnly(objectBody(req.body), []);
-      res.status(202).json(await sandbox().stopVm(id));
+      res.status(202).json(await power().stopVm(id));
     }),
   );
   router.get(
@@ -164,7 +181,9 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
     "/sandboxes/:id",
     route(async (req, res) => {
       const id = opaqueId(req.params.id);
-      res.json(await sandbox().getSandbox(id));
+      const value = await sandbox().getSandbox(id);
+      if (!value) throw new ApiError("not_found", "Sandbox not found");
+      res.json(value);
     }),
   );
   router.post(
@@ -211,7 +230,10 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
     "/jobs/:id",
     route(async (req, res) => {
       const id = opaqueId(req.params.id);
-      res.json(await sandbox().getJob(id));
+      const job = (ports.power && await ports.power.getJob(id)) ??
+        (ports.sandbox && await ports.sandbox.getJob(id));
+      if (!job) throw new ApiError("not_found", "Job not found");
+      res.json(job);
     }),
   );
   router.use((_req, res) =>
