@@ -1,0 +1,23 @@
+{
+  "name": "@repo/sandbox-service",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist/**"],
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "jest --runInBand",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@repo/typescript-config": "*",
+    "@types/node": "^20.11.24",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "5.5.4"
+  }
+}
