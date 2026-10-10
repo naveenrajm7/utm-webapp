@@ -25,7 +25,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -152,6 +154,13 @@ input {
   background: transparent;
   color: inherit;
   cursor: pointer;
+}
+
+.vm-job-status {
+  padding: 6px 16px;
+  background: #24344b;
+  color: #d7e6ff;
+  font-size: 0.85rem;
 }
 
 .app-body {
@@ -323,6 +332,113 @@ input {
   width: min(720px, 100%);
   margin: auto;
   padding: 32px 20px;
+}
+
+.home-dashboard {
+  width: 100%;
+  overflow: auto;
+  padding: 24px 16px 48px;
+}
+
+.home-dashboard[hidden] {
+  display: none;
+}
+
+.home-dashboard .welcome {
+  margin: 0 auto;
+  padding: 8px 0 20px;
+}
+
+.sandbox-panel {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #242424;
+}
+
+.sandbox-heading h2 {
+  margin: 0 0 8px;
+  font-size: 1.3rem;
+}
+.sandbox-heading > p {
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+.sandbox-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.sandbox-form label,
+.sandbox-command label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+.sandbox-form input,
+.sandbox-form select,
+.sandbox-command textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #191919;
+  color: var(--text);
+}
+.sandbox-form button {
+  align-self: end;
+}
+.sandbox-current .vm-spec {
+  margin: 0 0 16px;
+}
+.sandbox-job {
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #293d56;
+}
+.sandbox-command {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+.sandbox-command label span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.sandbox-command button {
+  justify-self: start;
+}
+.sandbox-result pre {
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #121212;
+  white-space: pre-wrap;
+}
+.sandbox-result h3 {
+  font-size: 0.9rem;
+  margin: 12px 0 4px;
+}
+.sandbox-destroy {
+  background: #913939;
+  margin-top: 12px;
+}
+.console-try-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.console-try-links .text-button {
+  text-decoration: none;
+}
+.console-try-links span {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .welcome-kicker {
@@ -511,6 +627,9 @@ input {
 }
 
 @media (max-width: 800px) {
+  .sandbox-form {
+    grid-template-columns: 1fr;
+  }
   .sidebar-toggle {
     display: inline-flex;
   }

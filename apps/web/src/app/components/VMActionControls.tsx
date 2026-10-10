@@ -1,75 +1,89 @@
 "use client";
 
-import { canOpenConsole, isBusyStatus, isStopped, type VmAction } from "../vm";
+import {
+  canOpenConsole,
+  hasCapability,
+  isActiveStatus,
+  isBusyStatus,
+  isStopped,
+  type VM,
+  type VmAction,
+} from "../vm";
 
 interface VMActionControlsProps {
-  vmName: string;
-  vmUUID: string;
-  status: string;
+  vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
 }
 
-const VMActionControls = ({ vmName, vmUUID, status, busy, onAction }: VMActionControlsProps) => {
-  const consoleReady = canOpenConsole(status);
-  const stopped = isStopped(status);
-  const transitioning = busy || isBusyStatus(status);
+const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
+  const consoleReady = canOpenConsole(vm.status);
+  const stopped = isStopped(vm.status);
+  const transitioning = busy || isBusyStatus(vm.status);
 
   const openPopout = (path: string) => {
     window.open(path, "_blank", "noopener,noreferrer");
   };
 
   const handleStop = () => {
-    if (window.confirm(`Stop ${vmName}?`)) {
-      onAction(vmUUID, "stop");
+    if (window.confirm(`Stop ${vm.name}?`)) {
+      onAction(vm.id, "stop");
     }
   };
 
   return (
     <div className="header-actions">
-      <button
-        type="button"
-        className="icon-button"
-        title="Open serial console in a new tab"
-        aria-label="Open serial console in a new tab"
-        disabled={!consoleReady}
-        onClick={() => openPopout(`/terminal/${vmUUID}`)}
-      >
-        <i className="bi bi-terminal" />
-      </button>
-      <button
-        type="button"
-        className="icon-button"
-        title="Open display in a new tab"
-        aria-label="Open display in a new tab"
-        disabled={!consoleReady}
-        onClick={() => openPopout(`/vnc/${vmUUID}`)}
-      >
-        <i className="bi bi-box-arrow-up-right" />
-      </button>
-      {stopped ? (
+      {hasCapability(vm, "serial") && (
+        <button
+          type="button"
+          className="icon-button"
+          title="Open serial console in a new tab"
+          aria-label="Open serial console in a new tab"
+          disabled={!consoleReady}
+          onClick={() => openPopout(`/terminal/${encodeURIComponent(vm.id)}`)}
+        >
+          <i className="bi bi-terminal" />
+        </button>
+      )}
+      {hasCapability(vm, "display") && (
+        <button
+          type="button"
+          className="icon-button"
+          title="Open display in a new tab"
+          aria-label="Open display in a new tab"
+          disabled={!consoleReady}
+          onClick={() => openPopout(`/vnc/${encodeURIComponent(vm.id)}`)}
+        >
+          <i className="bi bi-box-arrow-up-right" />
+        </button>
+      )}
+      {stopped && hasCapability(vm, "start") ? (
         <button
           type="button"
           className="icon-button is-go"
-          onClick={() => onAction(vmUUID, "start")}
+          onClick={() => onAction(vm.id, "start")}
           title="Start"
           aria-label="Start virtual machine"
           disabled={transitioning}
         >
-          <i className={`bi ${transitioning ? "bi-arrow-clockwise spin" : "bi-play-fill"}`} />
+          <i
+            className={`bi ${transitioning ? "bi-arrow-clockwise spin" : "bi-play-fill"}`}
+          />
         </button>
-      ) : (
+      ) : isActiveStatus(vm.status) && hasCapability(vm, "stop") ? (
         <button
           type="button"
           className="icon-button is-stop"
           onClick={handleStop}
           title="Stop"
           aria-label="Stop virtual machine"
-          disabled={busy}
+          disabled={transitioning}
         >
-          <i className={`bi ${busy ? "bi-arrow-clockwise spin" : "bi-stop-fill"}`} />
+          <i
+            className={`bi ${busy ? "bi-arrow-clockwise spin" : "bi-stop-fill"}`}
+          />
         </button>
-      )}
+      ) : null}
     </div>
   );
 };

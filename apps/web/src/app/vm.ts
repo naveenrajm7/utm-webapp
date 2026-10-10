@@ -1,10 +1,35 @@
 export interface VM {
-  UUID: string;
-  Name: string;
-  Status: string;
+  id: string;
+  name: string;
+  status: string;
+  backend: string;
+  capabilities: Record<string, unknown>;
+  network?: string;
+  memoryMiB?: number;
+  cpuCores?: number;
+  architecture?: string;
+  machine?: string;
+  memoryMb?: number;
+  serialPorts?: unknown;
+  drives?: unknown;
+  networkInterfaces?: unknown;
 }
 
 export type VmAction = "start" | "stop";
+
+const CAPABILITY_KEYS = {
+  start: ["start", "canStart"],
+  stop: ["stop", "canStop"],
+  serial: ["serial", "serialConsole"],
+  display: ["display", "vnc", "vncDisplay"],
+  guestExec: ["guestExec", "guestExecution"],
+} as const;
+
+export const hasCapability = (
+  vm: Pick<VM, "capabilities">,
+  kind: keyof typeof CAPABILITY_KEYS,
+): boolean =>
+  CAPABILITY_KEYS[kind].some((key) => vm.capabilities?.[key] === true);
 
 const ACTIVE_STATUSES = new Set([
   "started",
@@ -40,7 +65,8 @@ export const statusLabel = (status: string): string => {
   return status || "Unknown";
 };
 
-export const isStopped = (status: string): boolean => normalizeStatus(status) === "stopped";
+export const isStopped = (status: string): boolean =>
+  normalizeStatus(status) === "stopped";
 
 export const isRunning = (status: string): boolean => {
   const normalized = normalizeStatus(status);
@@ -49,29 +75,40 @@ export const isRunning = (status: string): boolean => {
 
 export const canOpenConsole = (status: string): boolean => {
   const normalized = normalizeStatus(status);
-  return normalized === "started" || normalized === "running" || normalized === "paused";
+  return (
+    normalized === "started" ||
+    normalized === "running" ||
+    normalized === "paused"
+  );
 };
 
 export const isBusyStatus = (status: string): boolean => {
   const normalized = normalizeStatus(status);
-  return normalized === "starting" || normalized === "stopping" || normalized === "pausing" || normalized === "resuming";
+  return (
+    normalized === "starting" ||
+    normalized === "stopping" ||
+    normalized === "pausing" ||
+    normalized === "resuming"
+  );
 };
 
-export const isActiveStatus = (status: string): boolean => ACTIVE_STATUSES.has(normalizeStatus(status));
+export const isActiveStatus = (status: string): boolean =>
+  ACTIVE_STATUSES.has(normalizeStatus(status));
 
 export const filterVms = (vms: VM[], query: string): VM[] => {
   const needle = query.trim().toLowerCase();
   const matched = needle
     ? vms.filter(
         (vm) =>
-          vm.Name.toLowerCase().includes(needle) || vm.UUID.toLowerCase().includes(needle),
+          vm.name.toLowerCase().includes(needle) ||
+          vm.id.toLowerCase().includes(needle),
       )
     : vms;
 
   return [...matched].sort((a, b) => {
-    const byStatus = statusRank(a.Status) - statusRank(b.Status);
+    const byStatus = statusRank(a.status) - statusRank(b.status);
     if (byStatus !== 0) return byStatus;
-    return a.Name.localeCompare(b.Name);
+    return a.name.localeCompare(b.name);
   });
 };
 
@@ -97,7 +134,12 @@ export const friendlyListError = (message: string): string => {
 const labelOf = (item: unknown, index: number): string => {
   if (item && typeof item === "object" && !Array.isArray(item)) {
     const record = item as Record<string, unknown>;
-    const name = record.Name ?? record.name ?? record.mode ?? record.interface ?? record.Mode;
+    const name =
+      record.Name ??
+      record.name ??
+      record.mode ??
+      record.interface ??
+      record.Mode;
     if (typeof name === "string" && name.trim()) return name;
   }
   if (typeof item === "string" && item.trim()) return item;
@@ -130,7 +172,8 @@ export const serialAvailability = (ports: unknown): SerialAvailability => {
   }
 
   if (typeof ports === "string") {
-    const unavailable = ports.toLowerCase() === "unavailable" || ports.trim() === "";
+    const unavailable =
+      ports.toLowerCase() === "unavailable" || ports.trim() === "";
     return {
       available: !unavailable,
       text: unavailable
@@ -148,7 +191,8 @@ export const serialAvailability = (ports: unknown): SerialAvailability => {
     }
     return {
       available: true,
-      text: ports.length === 1 ? "1 serial port" : `${ports.length} serial ports`,
+      text:
+        ports.length === 1 ? "1 serial port" : `${ports.length} serial ports`,
     };
   }
 

@@ -8,23 +8,33 @@ import VMActionControls from "./VMActionControls";
 import VMInfo from "./VMInfo";
 import VMList from "./VMList";
 import WelcomeScreen from "./WelcomeScreen";
+import SandboxPanel from "./SandboxPanel";
 
 export default function VMManager() {
-  const { vms, loading, error, busyUuid, actionError, refresh, runAction, dismissActionError } =
-    useVmList();
+  const {
+    vms,
+    loading,
+    error,
+    busyUuid,
+    actionError,
+    actionJob,
+    refresh,
+    runAction,
+    dismissActionError,
+  } = useVmList();
   const [selectedUUID, setSelectedUUID] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const selected = vms.find((vm) => vm.UUID === selectedUUID) ?? null;
+  const selected = vms.find((vm) => vm.id === selectedUUID) ?? null;
 
   useEffect(() => {
-    if (selectedUUID && !loading && vms.length > 0 && !vms.some((vm) => vm.UUID === selectedUUID)) {
+    if (selectedUUID && !loading && !vms.some((vm) => vm.id === selectedUUID)) {
       setSelectedUUID(null);
     }
   }, [loading, selectedUUID, vms]);
 
   useEffect(() => {
-    document.title = selected ? `${selected.Name} · UTM Web` : "UTM Web";
+    document.title = selected ? `${selected.name} · UTM Web` : "UTM Web";
   }, [selected]);
 
   const selectVM = (uuid: string) => {
@@ -38,31 +48,45 @@ export default function VMManager() {
         <button
           type="button"
           className="icon-button sidebar-toggle"
-          aria-label={sidebarOpen ? "Close virtual machine list" : "Open virtual machine list"}
+          aria-label={
+            sidebarOpen
+              ? "Close virtual machine list"
+              : "Open virtual machine list"
+          }
           aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen((open) => !open)}
         >
           <i className={`bi ${sidebarOpen ? "bi-x-lg" : "bi-list"}`} />
         </button>
-        <button type="button" className="brand-button" onClick={() => setSelectedUUID(null)}>
+        <button
+          type="button"
+          className="brand-button"
+          onClick={() => setSelectedUUID(null)}
+        >
           UTM Web
         </button>
         {selected && (
           <div className="header-vm">
-            <span className="header-vm-name">{selected.Name}</span>
-            <span className="header-vm-status">{statusLabel(selected.Status)}</span>
+            <span className="header-vm-name">{selected.name}</span>
+            <span className="header-vm-status">
+              {statusLabel(selected.status)}
+            </span>
           </div>
         )}
         {selected && (
           <VMActionControls
-            vmName={selected.Name}
-            vmUUID={selected.UUID}
-            status={selected.Status}
-            busy={busyUuid === selected.UUID}
+            vm={selected}
+            busy={busyUuid !== null}
             onAction={runAction}
           />
         )}
-        <button type="button" className="icon-button lock-button" onClick={clearApiKey} title="Lock" aria-label="Lock">
+        <button
+          type="button"
+          className="icon-button lock-button"
+          onClick={clearApiKey}
+          title="Lock"
+          aria-label="Lock"
+        >
           <i className="bi bi-lock" />
         </button>
       </header>
@@ -70,9 +94,18 @@ export default function VMManager() {
       {actionError && (
         <div className="action-error" role="alert">
           <span>{actionError}</span>
-          <button type="button" onClick={dismissActionError} aria-label="Dismiss">
+          <button
+            type="button"
+            onClick={dismissActionError}
+            aria-label="Dismiss"
+          >
             <i className="bi bi-x-lg" />
           </button>
+        </div>
+      )}
+      {actionJob && (
+        <div className="vm-job-status" role="status">
+          VM {actionJob.action} job · {actionJob.state}
         </div>
       )}
 
@@ -100,17 +133,17 @@ export default function VMManager() {
           />
         </aside>
         <main className="workspace-main">
-          {selected ? (
+          {selected && (
             <VMInfo
-              uuid={selected.UUID}
-              name={selected.Name}
-              status={selected.Status}
-              busy={busyUuid === selected.UUID}
+              vm={selected}
+              busy={busyUuid !== null}
               onAction={runAction}
             />
-          ) : (
-            <WelcomeScreen />
           )}
+          <div className="home-dashboard" hidden={Boolean(selected)}>
+            <WelcomeScreen />
+            <SandboxPanel vms={vms} onInventoryChange={refresh} />
+          </div>
         </main>
       </div>
     </div>

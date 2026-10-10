@@ -27,11 +27,20 @@ export default function WelcomeScreen() {
       <div className="welcome-copy">
         <p className="welcome-kicker">UTM Web</p>
         <h1>Virtual machines on this Mac</h1>
-        <p>Select a machine from the list to see its display, serial console, and details.</p>
+        <p>
+          Select a machine to see its available consoles and details, or create
+          a managed sandbox from an approved template.
+        </p>
       </div>
       <div className="welcome-links">
         {LINKS.map((link) => (
-          <a key={link.href} href={link.href} target="_blank" rel="noreferrer" className="welcome-link">
+          <a
+            key={link.href}
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            className="welcome-link"
+          >
             <i className={`bi ${link.icon}`} aria-hidden="true" />
             <span>
               <strong>{link.title}</strong>

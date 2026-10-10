@@ -1,147 +1,152 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, getAuthenticatedWebSocketUrl } from "../apiAuth";
+import { getAuthenticatedWebSocketUrl } from "../apiAuth";
+import { getVm } from "../v1";
 import {
   canOpenConsole,
-  formatMemory,
+  hasCapability,
   isBusyStatus,
   serialAvailability,
   statusLabel,
   summarizeList,
+  type VM,
   type VmAction,
 } from "../vm";
 import VNCViewer from "./VNCViewer";
 import XTerminal from "./xterminal";
 
 interface VMInfoProps {
-  uuid: string;
-  name: string;
-  status: string;
+  vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
 }
 
-interface VMDetails {
-  Architecture?: string;
-  Machine?: string;
-  Memory?: number;
-  SerialPorts?: unknown;
-  Drives?: unknown;
-  NetworkInterfaces?: unknown;
-}
-
 type TabId = "display" | "serial" | "details";
 
-const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: "display", label: "Display", icon: "bi-display" },
-  { id: "serial", label: "Serial", icon: "bi-terminal" },
-  { id: "details", label: "Details", icon: "bi-info-circle" },
-];
-
-const VMInfo = ({ uuid, name, status, busy, onAction }: VMInfoProps) => {
-  const [tab, setTab] = useState<TabId>("display");
-  const [details, setDetails] = useState<VMDetails | null>(null);
+const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
+  const [tab, setTab] = useState<TabId>("details");
+  const [details, setDetails] = useState<VM | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setTab("display");
+    setTab(
+      hasCapability(vm, "display")
+        ? "display"
+        : hasCapability(vm, "serial")
+          ? "serial"
+          : "details",
+    );
     setDetails(null);
     setDetailsError(null);
     setDetailsLoading(true);
-
     let cancelled = false;
-    apiFetch(`/vm_info?uuid=${encodeURIComponent(uuid)}`)
-      .then(async (response) => {
-        const data: unknown = await response.json().catch(() => null);
-        if (!response.ok) {
-          const message =
-            data && typeof data === "object" && "message" in data && typeof data.message === "string"
-              ? data.message
-              : "Could not load virtual machine details";
-          throw new Error(message);
-        }
-        return data as VMDetails;
-      })
+    getVm(vm.id)
       .then((data) => {
         if (!cancelled) setDetails(data);
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setDetailsError(error instanceof Error ? error.message : "Could not load virtual machine details");
-        }
+        if (!cancelled)
+          setDetailsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load virtual machine details",
+          );
       })
       .finally(() => {
         if (!cancelled) setDetailsLoading(false);
       });
-
     return () => {
       cancelled = true;
     };
-  }, [uuid]);
+  }, [vm.id]);
 
-  const serial = serialAvailability(details?.SerialPorts);
-  const consoleReady = canOpenConsole(status);
-  const transitioning = busy || isBusyStatus(status);
+  const current =
+    details && details.id === vm.id
+      ? { ...vm, ...details, status: vm.status }
+      : vm;
+  const serial =
+    current.serialPorts == null
+      ? {
+          available: hasCapability(current, "serial"),
+          text: hasCapability(current, "serial")
+            ? "Available"
+            : current.backend === "qemu"
+              ? "Not reported"
+              : "Unavailable",
+        }
+      : serialAvailability(current.serialPorts);
+  const consoleReady = canOpenConsole(vm.status);
+  const transitioning = busy || isBusyStatus(vm.status);
+  const tabs: { id: TabId; label: string; icon: string }[] = [
+    ...(hasCapability(current, "display")
+      ? [{ id: "display" as const, label: "Display", icon: "bi-display" }]
+      : []),
+    ...(hasCapability(current, "serial")
+      ? [{ id: "serial" as const, label: "Serial", icon: "bi-terminal" }]
+      : []),
+    { id: "details", label: "Details", icon: "bi-info-circle" },
+  ];
+  const activeTab = tabs.some((item) => item.id === tab) ? tab : tabs[0].id;
 
   const renderGate = (kind: "display" | "serial") => {
     if (transitioning && !consoleReady) {
       return (
         <div className="vm-pane-message">
-          <p>{statusLabel(status)} {name}…</p>
+          <p>
+            {statusLabel(vm.status)} {vm.name}…
+          </p>
         </div>
       );
     }
-
     if (!consoleReady) {
       return (
         <div className="vm-pane-message">
-          <p>Start {name} to open the {kind === "display" ? "display" : "serial console"}.</p>
-          <button
-            type="button"
-            className="text-button"
-            disabled={busy}
-            onClick={() => onAction(uuid, "start")}
-          >
-            Start virtual machine
-          </button>
+          <p>
+            Start {vm.name} to open the{" "}
+            {kind === "display" ? "display" : "serial console"}.
+          </p>
+          {hasCapability(current, "start") && (
+            <button
+              type="button"
+              className="text-button"
+              disabled={busy}
+              onClick={() => onAction(vm.id, "start")}
+            >
+              Start virtual machine
+            </button>
+          )}
         </div>
       );
     }
-
-    if (kind === "serial" && detailsLoading) {
-      return (
-        <div className="vm-pane-message">
-          <p>Checking serial ports…</p>
-        </div>
-      );
-    }
-
-    if (kind === "serial" && !detailsLoading && !serial.available) {
+    if (kind === "serial" && !serial.available) {
       return (
         <div className="vm-pane-message">
           <p>{serial.text}</p>
         </div>
       );
     }
-
     return null;
   };
 
   return (
-    <section className="vm-workspace" aria-label={name}>
-      <div className="vm-tabs" role="tablist" aria-label="Virtual machine views">
-        {TABS.map((item) => (
+    <section className="vm-workspace" aria-label={vm.name}>
+      <div
+        className="vm-tabs"
+        role="tablist"
+        aria-label="Virtual machine views"
+      >
+        {tabs.map((item) => (
           <button
             key={item.id}
             type="button"
             role="tab"
             id={`tab-${item.id}`}
-            aria-selected={tab === item.id}
+            aria-selected={activeTab === item.id}
             aria-controls={`panel-${item.id}`}
-            className={tab === item.id ? "is-selected" : ""}
+            className={activeTab === item.id ? "is-selected" : ""}
             onClick={() => setTab(item.id)}
           >
             <i className={`bi ${item.icon}`} aria-hidden="true" />
@@ -149,22 +154,31 @@ const VMInfo = ({ uuid, name, status, busy, onAction }: VMInfoProps) => {
           </button>
         ))}
       </div>
-
-      {tab === "display" && (
-        <div className="vm-pane" role="tabpanel" id="panel-display" aria-labelledby="tab-display">
+      {activeTab === "display" && (
+        <div
+          className="vm-pane"
+          role="tabpanel"
+          id="panel-display"
+          aria-labelledby="tab-display"
+        >
           {renderGate("display") ?? (
-            <VNCViewer url={getAuthenticatedWebSocketUrl("/vnc", { vmUUID: uuid })} />
+            <VNCViewer
+              url={getAuthenticatedWebSocketUrl("/vnc", { vmUUID: vm.id })}
+            />
           )}
         </div>
       )}
-
-      {tab === "serial" && (
-        <div className="vm-pane" role="tabpanel" id="panel-serial" aria-labelledby="tab-serial">
-          {renderGate("serial") ?? <XTerminal vmUUID={uuid} />}
+      {activeTab === "serial" && (
+        <div
+          className="vm-pane"
+          role="tabpanel"
+          id="panel-serial"
+          aria-labelledby="tab-serial"
+        >
+          {renderGate("serial") ?? <XTerminal vmUUID={vm.id} />}
         </div>
       )}
-
-      {tab === "details" && (
+      {activeTab === "details" && (
         <div
           className="vm-pane vm-pane-details"
           role="tabpanel"
@@ -180,41 +194,94 @@ const VMInfo = ({ uuid, name, status, busy, onAction }: VMInfoProps) => {
           <dl className="vm-spec">
             <div>
               <dt>Status</dt>
-              <dd>{statusLabel(status)}</dd>
+              <dd>{statusLabel(vm.status)}</dd>
             </div>
             <div>
-              <dt>Architecture</dt>
-              <dd>{details?.Architecture || "Unknown"}</dd>
+              <dt>Backend</dt>
+              <dd>{current.backend || "Unknown"}</dd>
             </div>
-            <div>
-              <dt>Machine</dt>
-              <dd>{details?.Machine || "Unknown"}</dd>
-            </div>
+            {current.architecture && (
+              <div>
+                <dt>Architecture</dt>
+                <dd>{current.architecture}</dd>
+              </div>
+            )}
+            {current.machine && (
+              <div>
+                <dt>Machine</dt>
+                <dd>{current.machine}</dd>
+              </div>
+            )}
             <div>
               <dt>Memory</dt>
-              <dd>{formatMemory(details?.Memory)}</dd>
+              <dd>
+                {current.memoryMiB == null
+                  ? "Unknown"
+                  : `${current.memoryMiB} MiB`}
+              </dd>
+            </div>
+            <div>
+              <dt>CPU cores</dt>
+              <dd>{current.cpuCores ?? "Unknown"}</dd>
             </div>
             <div>
               <dt>Serial</dt>
-              <dd>{detailsLoading ? "Loading" : serial.text}</dd>
+              <dd>{serial.text}</dd>
             </div>
-            <div>
-              <dt>Drives</dt>
-              <dd>{summarizeList(details?.Drives, "No drives")}</dd>
-            </div>
+            {current.drives != null && (
+              <div>
+                <dt>Drives</dt>
+                <dd>{summarizeList(current.drives, "No drives")}</dd>
+              </div>
+            )}
             <div>
               <dt>Network</dt>
-              <dd>{summarizeList(details?.NetworkInterfaces, "No network interfaces")}</dd>
+              <dd>
+                {current.network ||
+                  summarizeList(current.networkInterfaces, "Unknown")}
+              </dd>
             </div>
+            {current.backend === "qemu" &&
+              (!hasCapability(current, "serial") ||
+                !hasCapability(current, "display")) && (
+                <div>
+                  <dt>Console connections</dt>
+                  <dd className="console-try-links">
+                    {!hasCapability(current, "serial") && (
+                      <a
+                        className="text-button"
+                        href={`/terminal/${encodeURIComponent(vm.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Try serial console
+                      </a>
+                    )}
+                    {!hasCapability(current, "display") && (
+                      <a
+                        className="text-button"
+                        href={`/vnc/${encodeURIComponent(vm.id)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Try VNC display
+                      </a>
+                    )}
+                    <span>
+                      Availability has not been confirmed for this VM.
+                    </span>
+                  </dd>
+                </div>
+              )}
             <div>
               <dt>UUID</dt>
               <dd className="vm-uuid">
-                <code>{uuid}</code>
+                <code>{vm.id}</code>
                 <button
                   type="button"
                   className="text-button"
                   onClick={() => {
-                    void navigator.clipboard.writeText(uuid).then(
+                    void navigator.clipboard.writeText(vm.id).then(
                       () => {
                         setCopied(true);
                         window.setTimeout(() => setCopied(false), 1500);

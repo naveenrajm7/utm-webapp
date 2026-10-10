@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   canOpenConsole,
   filterVms,
+  hasCapability,
   isBusyStatus,
   isRunning,
   isStopped,
@@ -24,7 +25,8 @@ interface VMListProps {
 }
 
 const statusClass = (status: string): string => {
-  if (canOpenConsole(status) && status.toLowerCase() !== "paused") return "is-running";
+  if (canOpenConsole(status) && status.toLowerCase() !== "paused")
+    return "is-running";
   if (status.toLowerCase() === "paused") return "is-paused";
   if (isBusyStatus(status)) return "is-busy";
   if (isStopped(status)) return "is-stopped";
@@ -43,7 +45,7 @@ const VMList = ({
 }: VMListProps) => {
   const [query, setQuery] = useState("");
   const visible = useMemo(() => filterVms(vms, query), [vms, query]);
-  const runningCount = vms.filter((vm) => isRunning(vm.Status)).length;
+  const runningCount = vms.filter((vm) => isRunning(vm.status)).length;
 
   return (
     <div className="vm-list">
@@ -73,40 +75,54 @@ const VMList = ({
       )}
 
       <div className="vm-list-items">
-        {loading && vms.length === 0 && <p className="vm-list-empty">Loading virtual machines…</p>}
+        {loading && vms.length === 0 && (
+          <p className="vm-list-empty">Loading virtual machines…</p>
+        )}
         {!loading && vms.length === 0 && !error && (
           <p className="vm-list-empty">No virtual machines yet.</p>
         )}
         {!loading && vms.length > 0 && visible.length === 0 && (
-          <p className="vm-list-empty">No virtual machines match that search.</p>
+          <p className="vm-list-empty">
+            No virtual machines match that search.
+          </p>
         )}
         {visible.map((vm) => {
-          const selected = vm.UUID === selectedUUID;
-          const busy = busyUuid === vm.UUID || isBusyStatus(vm.Status);
+          const selected = vm.id === selectedUUID;
+          const busy = busyUuid !== null || isBusyStatus(vm.status);
           return (
-            <div key={vm.UUID} className={`vm-row ${selected ? "is-selected" : ""}`}>
+            <div
+              key={vm.id}
+              className={`vm-row ${selected ? "is-selected" : ""}`}
+            >
               <button
                 type="button"
                 className="vm-row-main"
-                onClick={() => onSelectVM(vm.UUID)}
+                onClick={() => onSelectVM(vm.id)}
                 aria-current={selected ? "true" : undefined}
               >
-                <span className={`status-dot ${statusClass(vm.Status)}`} aria-hidden="true" />
+                <span
+                  className={`status-dot ${statusClass(vm.status)}`}
+                  aria-hidden="true"
+                />
                 <span className="vm-row-text">
-                  <span className="vm-row-name">{vm.Name}</span>
-                  <span className="vm-row-status">{statusLabel(vm.Status)}</span>
+                  <span className="vm-row-name">{vm.name}</span>
+                  <span className="vm-row-status">
+                    {statusLabel(vm.status)}
+                  </span>
                 </span>
               </button>
-              {isStopped(vm.Status) && (
+              {isStopped(vm.status) && hasCapability(vm, "start") && (
                 <button
                   type="button"
                   className="icon-button"
-                  title={`Start ${vm.Name}`}
-                  aria-label={`Start ${vm.Name}`}
+                  title={`Start ${vm.name}`}
+                  aria-label={`Start ${vm.name}`}
                   disabled={busy}
-                  onClick={() => onAction(vm.UUID, "start")}
+                  onClick={() => onAction(vm.id, "start")}
                 >
-                  <i className={`bi ${busy ? "bi-arrow-clockwise spin" : "bi-play-fill"}`} />
+                  <i
+                    className={`bi ${busy ? "bi-arrow-clockwise spin" : "bi-play-fill"}`}
+                  />
                 </button>
               )}
             </div>
