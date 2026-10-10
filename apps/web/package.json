@@ -6,11 +6,13 @@
     "build": "next build",
     "dev": "next dev -p 3000",
     "lint": "eslint . --max-warnings 0",
+    "test": "jest --config jest.config.js --runInBand",
     "start": "next start"
   },
   "dependencies": {
     "@novnc/novnc": "^1.5.0",
     "@repo/ui": "*",
+    "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
     "bootstrap": "^5.3.3",
     "bootstrap-icons": "^1.11.3",
