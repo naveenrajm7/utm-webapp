@@ -1,7 +1,8 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import path from "path";
 
-const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const UUID_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 export const isValidUuid = (value: unknown): value is string =>
   typeof value === "string" && UUID_PATTERN.test(value);
@@ -19,21 +20,31 @@ export interface JxaResult {
  * UTM's `utmctl` CLI cannot reach the UTM app from a non-GUI session (it fails
  * with OSStatus -600), so all VM control goes through AppleScript/JXA instead.
  */
-export const runJxa = (script: string, args: string[] = []): Promise<JxaResult> => {
+export const runJxa = <T = JxaResult>(
+  script: string,
+  args: string[] = [],
+): Promise<T> => {
+  if (!["get_vm_info.js", "list_vm.js", "vm_control.js"].includes(script)) {
+    return Promise.reject(new Error("Unknown UTM script"));
+  }
   const scriptPath = path.join(__dirname, "../scripts", script);
-  const command = `osascript -l JavaScript ${scriptPath} ${args.join(" ")}`;
 
   return new Promise((resolve, reject) => {
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        return reject(new Error(stderr.trim() || error.message));
-      }
+    execFile(
+      "osascript",
+      ["-l", "JavaScript", scriptPath, ...args],
+      { timeout: 30_000, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          return reject(new Error(stderr.trim() || error.message));
+        }
 
-      try {
-        resolve(JSON.parse(stdout) as JxaResult);
-      } catch {
-        reject(new Error(`Unexpected script output: ${stdout.trim()}`));
-      }
-    });
+        try {
+          resolve(JSON.parse(stdout) as T);
+        } catch {
+          reject(new Error(`Unexpected script output: ${stdout.trim()}`));
+        }
+      },
+    );
   });
 };

@@ -1,4 +1,4 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import net from "net";
 import { spawn } from "node-pty";
@@ -7,6 +7,7 @@ import { log } from "@repo/logger";
 import { isAuthorizedRequest } from "./auth";
 import { getPtyDevice } from "./utils/getPtyDevice";
 import { getVncTarget } from "./utils/getVncTarget";
+import { isValidUuid } from "./utils/runJxa";
 
 /** Serial clients render whatever they receive, so errors are shown as output. */
 const sendSerialNotice = (ws: WebSocket, text: string) => {
@@ -40,15 +41,36 @@ const attachSerial = async (ws: WebSocket, vmUUID: string) => {
     },
   });
 
-  ws.on("message", (message) => {
-    const data = JSON.parse(message.toString());
-
-    if (data.type === "command") {
-      ptyProcess.write(data.data);
-    }
-
-    if (data.type === "resize") {
-      ptyProcess.resize(data.cols, data.rows);
+  ws.on("message", (message, isBinary) => {
+    try {
+      if (isBinary) throw new Error("Serial input must be JSON");
+      const data: unknown = JSON.parse(message.toString());
+      if (!data || typeof data !== "object")
+        throw new Error("Invalid serial input");
+      const input = data as Record<string, unknown>;
+      if (
+        input.type === "command" &&
+        typeof input.data === "string" &&
+        input.data.length <= 16384
+      ) {
+        ptyProcess.write(input.data);
+      } else if (
+        input.type === "resize" &&
+        Number.isInteger(input.cols) &&
+        Number.isInteger(input.rows) &&
+        typeof input.cols === "number" &&
+        typeof input.rows === "number" &&
+        input.cols >= 1 &&
+        input.cols <= 500 &&
+        input.rows >= 1 &&
+        input.rows <= 200
+      ) {
+        ptyProcess.resize(input.cols, input.rows);
+      } else {
+        throw new Error("Invalid serial input");
+      }
+    } catch {
+      ws.close(1008, "invalid input");
     }
   });
 
@@ -59,9 +81,14 @@ const attachSerial = async (ws: WebSocket, vmUUID: string) => {
   ws.on("close", () => {
     ptyProcess.kill("SIGTERM");
 
-    exec(`screen -X -S ${sessionName} quit`, () => {
-      log(`Serial session ${sessionName} closed`);
-    });
+    execFile(
+      "screen",
+      ["-X", "-S", sessionName, "quit"],
+      { timeout: 5000 },
+      () => {
+        log(`Serial session ${sessionName} closed`);
+      },
+    );
   });
 };
 
@@ -99,26 +126,49 @@ const attachVnc = async (ws: WebSocket, vmUUID: string) => {
 
   socket.on("close", () => ws.close());
 
-  ws.on("message", (message) => socket.write(message as Buffer));
+  ws.on("message", (message, isBinary) => {
+    if (!isBinary) {
+      ws.close(1008, "binary input required");
+      return;
+    }
+    socket.write(message as Buffer);
+  });
 
   ws.on("close", () => {
     socket.destroy();
   });
 };
 
-export const handleWebSocketConnection = async (ws: WebSocket, req: IncomingMessage) => {
-  const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+export const handleWebSocketConnection = async (
+  ws: WebSocket,
+  req: IncomingMessage,
+) => {
+  let url: URL;
+  try {
+    url = new URL(req.url || "/", "http://localhost");
+  } catch {
+    ws.close(1008, "invalid path");
+    return;
+  }
 
   if (!isAuthorizedRequest(req, url)) {
     ws.close(1008, "unauthorized");
     return;
   }
 
+  if (url.pathname !== "/" && url.pathname !== "/vnc") {
+    ws.close(1008, "invalid path");
+    return;
+  }
   const vmUUID = url.searchParams.get("vmUUID");
-
-  if (!vmUUID) {
-    log("VM UUID not provided");
-    ws.close();
+  if (
+    !isValidUuid(vmUUID) ||
+    url.searchParams.getAll("vmUUID").length !== 1 ||
+    [...url.searchParams.keys()].some(
+      (key) => key !== "vmUUID" && key !== "token",
+    )
+  ) {
+    ws.close(1008, "invalid VM ID");
     return;
   }
 
@@ -136,10 +186,20 @@ export const attachWebSocketServer = (server: HttpServer): WebSocketServer => {
   // noVNC asks for the "binary" subprotocol, so accept it.
   const wss = new WebSocketServer({
     server,
-    handleProtocols: (protocols: Set<string>) => (protocols.has("binary") ? "binary" : false),
+    maxPayload: 1024 * 1024,
+    handleProtocols: (protocols: Set<string>) =>
+      protocols.has("binary") ? "binary" : false,
   });
 
-  wss.on("connection", handleWebSocketConnection);
+  wss.on("connection", (ws, req) => {
+    void handleWebSocketConnection(ws, req).catch((error: unknown) => {
+      log(
+        `WebSocket bridge failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      if (ws.readyState === WebSocket.OPEN)
+        ws.close(1011, "bridge unavailable");
+    });
+  });
 
   return wss;
 };
