@@ -96,6 +96,7 @@ export class UtmAdapter implements UtmPort {
   private readonly osascriptPath: string;
   private readonly scriptPath: string;
   private cliAvailable?: boolean;
+  private cliVersion: string | null = null;
 
   constructor(options: UtmAdapterOptions = {}) {
     this.runner = options.runner ?? new SpawnRunner();
@@ -114,6 +115,7 @@ export class UtmAdapter implements UtmPort {
     try {
       const result = await this.run(this.utmctlPath, ["version"], 5_000, 16_384);
       this.cliAvailable = result.exitCode === 0;
+      if (this.cliAvailable) this.cliVersion = result.stdout.match(/\b\d+\.\d+(?:\.\d+)?\b/)?.[0] ?? null;
     } catch {
       this.cliAvailable = false;
     }
@@ -169,7 +171,7 @@ export class UtmAdapter implements UtmPort {
   async getCapabilities(): Promise<HostCapabilities> {
     const cli = await this.cliWorks();
     const inventory = await this.inventory();
-    return { utmVersion: inventory.version, utmctlAvailable: cli, jxaAvailable: true, clone: true, configure: true, guestExec: true };
+    return { utmVersion: inventory.version ?? this.cliVersion, utmctlAvailable: cli, jxaAvailable: true, clone: true, configure: true, guestExec: true };
   }
 
   async listVms(): Promise<Vm[]> {
@@ -243,8 +245,10 @@ export class UtmAdapter implements UtmPort {
       const stderr = typeof data.stderr === "string" ? data.stderr : Buffer.from(String(data.stderrData ?? ""), "base64").toString("utf8");
       return { stdout, stderr, exitCode: data.exitCode };
     }
-    const result = await this.run(this.utmctlPath, ["exec", id, "--", ...argv], timeoutMs);
-    if (result.exitCode !== 0 && /(guest agent|not supported|VM_NOT_FOUND|not found|application not found|OSStatus -600|\(-2700\))/i.test(result.stderr.trim())) {
+    const result = await this.run(this.utmctlPath, ["exec", id, "--cmd", ...argv], timeoutMs);
+    const detail = result.stderr.trim();
+    if (/guest agent is not (?:running|installed|connected)/i.test(detail) ||
+        (result.exitCode !== 0 && /(guest agent|not supported|VM_NOT_FOUND|not found|application not found|OSStatus -600|\(-2700\)|^Error: Missing expected argument)/i.test(detail))) {
       throw failure("exec", result);
     }
     return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
