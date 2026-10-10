@@ -1,5 +1,6 @@
 "use client";
 
+import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
@@ -10,65 +11,78 @@ interface XTerminalProps {
 }
 
 function XTerminal({ vmUUID }: XTerminalProps) {
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<HTMLDivElement | null>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    // Create a new terminal instance
+    const shell = shellRef.current;
+    const host = terminalRef.current;
+    if (!shell || !host) return;
+
     const term = new Terminal({
-      convertEol: true, // Handle newlines properly
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+      fontSize: 14,
+      theme: {
+        background: "#111111",
+        foreground: "#e8e8e8",
+        cursor: "#e8e8e8",
+      },
     });
-    termRef.current = term;
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(host);
 
-    // The API serves the serial console on its root WebSocket path.
+    const fitSoon = () => {
+      fit.fit();
+    };
+    const frame = window.requestAnimationFrame(fitSoon);
+    const observer = new ResizeObserver(fitSoon);
+    observer.observe(shell);
+
     const ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
-    wsRef.current = ws;
 
-    // on every message from ws, write it to the terminal
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "data") term.write(data.data);
+      if (typeof event.data !== "string") return;
+      try {
+        const data = JSON.parse(event.data) as { type?: string; data?: string };
+        if (data.type === "data" && typeof data.data === "string") {
+          term.write(data.data);
+        }
+      } catch {
+        term.write(event.data);
+      }
     };
 
-    // Open the terminal in the DOM element
-    if (terminalRef.current) {
-      term.open(terminalRef.current);
-    }
+    ws.onopen = () => {
+      fitSoon();
+    };
 
     term.onResize(({ cols, rows }) => {
-      ws.send(
-        JSON.stringify({
-          type: "resize",
-          cols,
-          rows,
-        })
-      );
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "resize", cols, rows }));
+      }
     });
 
-    term.onKey((e) => {
-      ws.send(
-        JSON.stringify({
-          type: "command",
-          data: e.key,
-        }),
-      );
+    term.onData((data) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "command", data }));
+      }
     });
 
-    // when the component unmounts
-    // close the ws connection and dispose the terminal 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      if (termRef.current) {
-        termRef.current.dispose();
-      }
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      ws.close();
+      term.dispose();
     };
   }, [vmUUID]);
 
   return (
-    <div ref={terminalRef} style={{ width: "100%", height: "100%" }}></div>
+    <div ref={shellRef} className="terminal-shell">
+      <div ref={terminalRef} className="terminal-host" />
+    </div>
   );
 }
 

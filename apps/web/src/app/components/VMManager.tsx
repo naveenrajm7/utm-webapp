@@ -1,102 +1,117 @@
 "use client";
 
-import { useRef, useState } from 'react';
-import VMList from './VMList';
-import VMInfo from './VMInfo';
-import VMActionControls from './VMActionControls';
-import WelcomeScreen from './WelcomeScreen';
-import { clearApiKey } from '../apiAuth';
+import { useEffect, useState } from "react";
+import { clearApiKey } from "../apiAuth";
+import { useVmList } from "../useVmList";
+import { statusLabel } from "../vm";
+import VMActionControls from "./VMActionControls";
+import VMInfo from "./VMInfo";
+import VMList from "./VMList";
+import WelcomeScreen from "./WelcomeScreen";
 
 export default function VMManager() {
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const mainContentRef = useRef<HTMLDivElement>(null);
-  const vmHeaderRef = useRef<HTMLDivElement>(null);
-  const [isResizing, setIsResizing] = useState(false);
-  const [selectedVMUUID, setSelectedVMUUID] = useState<string | null>(null);
+  const { vms, loading, error, busyUuid, actionError, refresh, runAction, dismissActionError } =
+    useVmList();
+  const [selectedUUID, setSelectedUUID] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const handleMouseDown = () => {
-    setIsResizing(true);
-  };
+  const selected = vms.find((vm) => vm.UUID === selectedUUID) ?? null;
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isResizing || !sidebarRef.current || !mainContentRef.current || !vmHeaderRef.current) return;
-    const minSidebarWidth = window.innerWidth / 4;
-    const minMainContentWidth = window.innerWidth / 4;
-    const newSidebarWidth = Math.max(e.clientX, minSidebarWidth);
-    const newMainContentWidth = Math.max(window.innerWidth - newSidebarWidth, minMainContentWidth);
-
-    if (newSidebarWidth + minMainContentWidth <= window.innerWidth) {
-      sidebarRef.current.style.width = `${newSidebarWidth}px`;
-      vmHeaderRef.current.style.width = `${newSidebarWidth}px`;
-      mainContentRef.current.style.flexBasis = `${newMainContentWidth}px`;
+  useEffect(() => {
+    if (selectedUUID && !loading && vms.length > 0 && !vms.some((vm) => vm.UUID === selectedUUID)) {
+      setSelectedUUID(null);
     }
-  };
+  }, [loading, selectedUUID, vms]);
 
-  const handleMouseUp = () => {
-    setIsResizing(false);
+  useEffect(() => {
+    document.title = selected ? `${selected.Name} · UTM Web` : "UTM Web";
+  }, [selected]);
+
+  const selectVM = (uuid: string) => {
+    setSelectedUUID(uuid);
+    setSidebarOpen(false);
   };
 
   return (
-    <div
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}
-    >
-      <header
-        className="combined-header d-flex align-items-center"
-        style={{ padding: '0.5rem 1rem' }}
-      >
-        {/* VM Header Section */}
-        <div ref={vmHeaderRef} className="d-flex align-items-center vm-header" style={{ width: '300px' }}>
-          <span onClick={() => setSelectedVMUUID(null)} style={{ cursor: 'pointer' }}>Virtual Machines</span>
-        </div>
-
-        {/* UTM Section */}
-        <div className="d-flex align-items-center flex-grow-1">
-          <button
-            className="btn btn-primary"
-            style={{
-              backgroundColor: 'inherit',
-              border: 'none',
-              padding: 0,
-            }}
-          >
-            <i className="bi bi-plus" style={{ fontSize: '1.5rem' }}></i>
-          </button>
-          <div className="d-flex align-items-center ml-3">
-            <span>UTM</span>
-          </div>
-        </div>
-
-        {/* Icons Section */}
-        {selectedVMUUID && <VMActionControls vmUUID={selectedVMUUID} />}
+    <div className="app-shell">
+      <header className="app-header">
         <button
-          className="btn btn-link text-white p-0 mx-2 ms-auto"
-          onClick={clearApiKey}
-          title="Lock"
+          type="button"
+          className="icon-button sidebar-toggle"
+          aria-label={sidebarOpen ? "Close virtual machine list" : "Open virtual machine list"}
+          aria-expanded={sidebarOpen}
+          onClick={() => setSidebarOpen((open) => !open)}
         >
-          <i className="bi bi-lock" style={{ fontSize: '1.5rem' }}></i>
+          <i className={`bi ${sidebarOpen ? "bi-x-lg" : "bi-list"}`} />
+        </button>
+        <button type="button" className="brand-button" onClick={() => setSelectedUUID(null)}>
+          UTM Web
+        </button>
+        {selected && (
+          <div className="header-vm">
+            <span className="header-vm-name">{selected.Name}</span>
+            <span className="header-vm-status">{statusLabel(selected.Status)}</span>
+          </div>
+        )}
+        {selected && (
+          <VMActionControls
+            vmName={selected.Name}
+            vmUUID={selected.UUID}
+            status={selected.Status}
+            busy={busyUuid === selected.UUID}
+            onAction={runAction}
+          />
+        )}
+        <button type="button" className="icon-button lock-button" onClick={clearApiKey} title="Lock" aria-label="Lock">
+          <i className="bi bi-lock" />
         </button>
       </header>
-      <div className="d-flex" style={{ height: 'calc(100vh - 60px)' }}>
-        <div ref={sidebarRef} className="sidebar flex-shrink-0" style={{ width: '300px' }}>
-          <VMList onSelectVM={setSelectedVMUUID} />
+
+      {actionError && (
+        <div className="action-error" role="alert">
+          <span>{actionError}</span>
+          <button type="button" onClick={dismissActionError} aria-label="Dismiss">
+            <i className="bi bi-x-lg" />
+          </button>
         </div>
-        <div
-          className="resizer"
-          onMouseDown={handleMouseDown}
-          style={{
-            width: '5px',
-            cursor: 'col-resize',
-            backgroundColor: '#444',
-            height: '100%',
-          }}
-        ></div>
-        <div ref={mainContentRef} className="main-content flex-grow-1">
-          <main>
-            {selectedVMUUID ? <VMInfo uuid={selectedVMUUID} /> : <WelcomeScreen />}
-          </main>
-        </div>
+      )}
+
+      <div className="app-body">
+        {sidebarOpen && (
+          <button
+            type="button"
+            className="sidebar-backdrop"
+            aria-label="Close virtual machine list"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
+          <VMList
+            vms={vms}
+            loading={loading}
+            error={error}
+            selectedUUID={selectedUUID}
+            busyUuid={busyUuid}
+            onSelectVM={selectVM}
+            onAction={runAction}
+            onRetry={() => {
+              void refresh();
+            }}
+          />
+        </aside>
+        <main className="workspace-main">
+          {selected ? (
+            <VMInfo
+              uuid={selected.UUID}
+              name={selected.Name}
+              status={selected.Status}
+              busy={busyUuid === selected.UUID}
+              onAction={runAction}
+            />
+          ) : (
+            <WelcomeScreen />
+          )}
+        </main>
       </div>
     </div>
   );
