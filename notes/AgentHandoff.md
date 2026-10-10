@@ -60,19 +60,19 @@ Own `apps/web/**`. Start from the preserved UI branch, not from a fresh `main` c
 
 **Done:** the web build passes; with a mocked API, users can list VMs, start/stop, create a sandbox from an approved template, see job status, and destroy the sandbox.
 
-## Worktree and merge procedure
+## Prepared worktrees and merge procedure
 
-From the repository root, create a sibling worktree for each branch. For a new lane:
+The following local worktrees are ready. Open the corresponding directory for each agent; do not run `git worktree add` again in this checkout. Run `npm ci` inside a worktree before building or testing because dependencies are not copied from the primary checkout.
 
-```sh
-git worktree add -b codex/utm-adapter ../utm-webapp-utm-adapter main
-```
+| Agent | Branch | Worktree |
+| --- | --- | --- |
+| UTM adapter | `codex/utm-adapter` | `../utm-webapp-utm-adapter` |
+| API foundation | `codex/api-foundation` | `../utm-webapp-api-foundation` |
+| Sandbox service | `codex/sandbox-service` | `../utm-webapp-sandbox-service` |
+| MCP adapter | `codex/mcp` | `../utm-webapp-mcp` |
+| Web UI | `codex/web-ui-wip` | `../utm-webapp-web-ui` |
 
-Use the corresponding name for `api-foundation`, `sandbox-service`, and `mcp`. For the existing UI branch:
-
-```sh
-git worktree add ../utm-webapp-web-ui codex/web-ui-wip
-```
+These branches and handoff commits are local and have not been pushed. Agents working on another Mac need the branches published or otherwise transferred before they can use these worktrees.
 
 Each agent commits only its owned files and records tests run and Mac-only checks still needed. Merge the adapter and API foundation first, then the sandbox service, MCP adapter, and web UI. The integration owner resolves `package-lock.json` once, wires the packages into the API, checks the legacy UI migration, and runs the full disposable-VM flow on the Mac. Do not run destructive checks against personal VMs.
 
