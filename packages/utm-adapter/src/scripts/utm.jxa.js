@@ -9,11 +9,22 @@ function run(argv) {
   };
   const describe = function (vm, detail) {
     const config = vm.configuration();
+    var displays = [];
+    try {
+      displays = (config.displays || []).map(function (display) {
+        var hardware = "";
+        try { hardware = display.hardware ? String(display.hardware) : ""; } catch (err) { hardware = ""; }
+        return { hardware: hardware };
+      });
+    } catch (err) { displays = []; }
+    var icon = "";
+    try { icon = config.icon ? String(config.icon) : ""; } catch (err) { icon = ""; }
     const result = {
       id: vm.id(), name: vm.name(), status: vm.status(), backend: vm.backend(),
-      memoryMiB: config.memory, cpuCores: config.cpuCores,
+      memoryMiB: config.memory, cpuCores: config.cpuCores, icon: icon,
       networkInterfaces: (config.networkInterfaces || []).map(function (nic) { return { mode: nic.mode }; }),
       serialPorts: (config.serialPorts || []).map(function (port) { return { interface: port.interface }; }),
+      displays: displays,
       vncArguments: (config.qemuAdditionalArguments || []).map(function (arg) { return arg.argumentString; })
     };
     if (detail) {

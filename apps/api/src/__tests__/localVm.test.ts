@@ -14,6 +14,8 @@ const makeVm = (status: "stopped" | "started"): AdapterVm => ({
   status,
   backend: "qemu",
   network: "shared",
+  networkInterfaces: [{ mode: "shared" }],
+  icon: "debian",
   memoryMiB: 4096,
   cpuCores: 2,
   architecture: "aarch64",
@@ -72,7 +74,7 @@ describe("local UTM web backend", () => {
     const auth = { "x-api-key": KEY };
 
     expect((await request.get("/v1/vms").set(auth).expect(200)).body[0])
-      .toMatchObject({ id: ID, name: "Vagrant test", status: "stopped", capabilities: { start: true, stop: false, serial: true, display: true } });
+      .toMatchObject({ id: ID, name: "Vagrant test", status: "stopped", icon: "debian", networkInterfaces: [{ mode: "shared" }], capabilities: { start: true, stop: false, serial: true, display: true } });
     expect((await request.get("/list_vms").set(auth).expect(200)).body[0])
       .toEqual({ UUID: ID, Name: "Vagrant test", Status: "stopped" });
     expect((await request.get("/v1/capabilities").set(auth).expect(200)).body)

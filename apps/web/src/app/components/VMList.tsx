@@ -92,6 +92,7 @@ const VMList = ({
               <button
                 type="button"
                 className="vm-row-main"
+                title={vm.name}
                 onClick={() => onSelectVM(vm.id)}
                 aria-current={selected ? "true" : undefined}
               >

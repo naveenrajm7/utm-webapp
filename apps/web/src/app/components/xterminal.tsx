@@ -2,7 +2,7 @@
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { getAuthenticatedWebSocketUrl } from "../apiAuth";
 import { IS_DEMO } from "../demo";
@@ -11,14 +11,18 @@ interface XTerminalProps {
   vmUUID: string;
 }
 
+type SerialHint = "connecting" | "quiet" | "live" | "failed";
+
 function XTerminal({ vmUUID }: XTerminalProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<HTMLDivElement | null>(null);
+  const [hint, setHint] = useState<SerialHint>("connecting");
 
   useEffect(() => {
     const shell = shellRef.current;
     const host = terminalRef.current;
     if (!shell || !host) return;
+    setHint("connecting");
 
     const term = new Terminal({
       convertEol: true,
@@ -34,6 +38,7 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
+    term.focus();
 
     const fitSoon = () => {
       fit.fit();
@@ -46,7 +51,10 @@ function XTerminal({ vmUUID }: XTerminalProps) {
       let detach: (() => void) | undefined;
       let disposed = false;
       void import("../demo/demoShell").then(({ attachDemoShell }) => {
-        if (!disposed) detach = attachDemoShell(term);
+        if (disposed) return;
+        detach = attachDemoShell(term);
+        term.focus();
+        setHint("live");
       });
       return () => {
         disposed = true;
@@ -58,6 +66,8 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     }
 
     const ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
+    let disposed = false;
+    let sawOutput = false;
 
     ws.onmessage = (event) => {
       if (typeof event.data !== "string") return;
@@ -65,14 +75,31 @@ function XTerminal({ vmUUID }: XTerminalProps) {
         const data = JSON.parse(event.data) as { type?: string; data?: string };
         if (data.type === "data" && typeof data.data === "string") {
           term.write(data.data);
+          if (data.data.length > 0) {
+            sawOutput = true;
+            setHint("live");
+          }
+          return;
         }
       } catch {
         term.write(event.data);
+        sawOutput = true;
+        setHint("live");
       }
     };
 
     ws.onopen = () => {
       fitSoon();
+      term.focus();
+      if (!sawOutput) setHint("quiet");
+    };
+
+    ws.onerror = () => {
+      if (!disposed) setHint("failed");
+    };
+
+    ws.onclose = () => {
+      if (!disposed) setHint("failed");
     };
 
     term.onResize(({ cols, rows }) => {
@@ -88,6 +115,7 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     });
 
     return () => {
+      disposed = true;
       window.cancelAnimationFrame(frame);
       observer.disconnect();
       ws.close();
@@ -95,8 +123,20 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     };
   }, [vmUUID]);
 
+  const hintText =
+    hint === "connecting"
+      ? "Connecting to the serial console…"
+      : hint === "failed"
+        ? "Serial console disconnected."
+        : "Connected. Press Enter for login.";
+
   return (
     <div ref={shellRef} className="terminal-shell">
+      {hint !== "live" && (
+        <p className={`terminal-hint ${hint === "failed" ? "is-failed" : ""}`} role="status">
+          {hintText}
+        </p>
+      )}
       <div ref={terminalRef} className="terminal-host" />
     </div>
   );

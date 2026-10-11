@@ -1,5 +1,9 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test, expect } from "@jest/globals";
 import { UtmAdapter, UtmError, ProcessRunner, ProcessResult, RunOptions, UtmPort } from "../index";
+import { readSavedScreenshot } from "../screenshot";
 
 const TEMPLATE = "11111111-1111-4111-8111-111111111111";
 const CLONE = "22222222-2222-4222-8222-222222222222";
@@ -8,7 +12,9 @@ type FakeVm = {
   id: string; name: string; status: string; backend: string;
   networkInterfaces: { mode: string }[];
   serialPorts?: { interface: string }[];
+  displays?: { hardware: string }[];
   vncArguments?: string[];
+  icon?: string;
   architecture?: string;
   machine?: string;
   drives?: unknown[];
@@ -87,6 +93,7 @@ test("inventory normalizes backend, network, and capabilities", async () => {
   const vms = await port.listVms();
   expect(vms[0].capabilities.guestExec).toBe(false);
   expect(vms[1].network).toBe("other");
+  expect(vms[1].networkInterfaces).toEqual([{ mode: "bridged" }]);
   expect(vms[1].capabilities.guestExec).toBe(false);
   expect(vms[1].capabilities.stop).toBe(true);
   expect(vms[0].capabilities).toMatchObject({ clone: false, configure: false, delete: false, guestExec: false });
@@ -97,11 +104,12 @@ test("inventory normalizes backend, network, and capabilities", async () => {
 test("QEMU detail and configured consoles stay stable while stopped and running", async () => {
   const fake = new FakeRunner();
   fake.vms[0] = { ...fake.vms[0], serialPorts: [{ interface: "ptty" }],
+    displays: [{ hardware: "virtio-ramfb" }], icon: "debian",
     vncArguments: ["-vnc", "127.0.0.1:2"], architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }] };
   const port = adapter(fake);
   const stopped = await port.getVm(TEMPLATE);
   expect((await port.getVm(TEMPLATE.toUpperCase())).id).toBe(TEMPLATE);
-  expect(stopped).toMatchObject({ architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }],
+  expect(stopped).toMatchObject({ architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }], icon: "debian",
     capabilities: { serial: true, display: true } });
   expect((await port.listVms())[0].capabilities).toMatchObject({ serial: true, display: true });
   await expect(port.getSerialDevice(TEMPLATE)).rejects.toMatchObject({ code: "conflict" });
@@ -123,6 +131,54 @@ test("Apple PTY serial is configured but its display does not imply VNC", async 
   await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
 });
 
+test("a loopback VNC argument without a display card is not a graphical console", async () => {
+  const fake = new FakeRunner();
+  fake.vms[0] = { ...fake.vms[0], status: "started", serialPorts: [{ interface: "ptty" }],
+    displays: [], vncArguments: ["-vnc", "127.0.0.1:1"] };
+  const port = adapter(fake);
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ serial: true, display: false });
+  expect((await port.listVms())[0].capabilities.display).toBe(false);
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "unsupported", operation: "vnc" });
+  fake.vms[0].displays = [{ hardware: "none" }];
+  expect((await port.getVm(TEMPLATE)).capabilities.display).toBe(false);
+  fake.vms[0].displays = [{ hardware: "virtio-gpu-pci" }];
+  fake.vms[0].status = "stopped";
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ display: true, start: true });
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "conflict" });
+});
+
+test("detail attaches a saved screenshot and inventory does not", async () => {
+  const fake = new FakeRunner();
+  fake.vms[0] = { ...fake.vms[0], displays: [{ hardware: "virtio-ramfb" }], vncArguments: ["-vnc", "127.0.0.1:1"] };
+  let reads = 0;
+  const port = new UtmAdapter({
+    runner: fake, utmctlPath: "utmctl", osascriptPath: "osascript", scriptPath: "fixed.js",
+    screenshotReader: async () => {
+      reads += 1;
+      return "data:image/png;base64,abcd";
+    },
+  });
+  expect((await port.listVms())[0].screenshot).toBeUndefined();
+  expect(reads).toBe(0);
+  expect((await port.getVm(TEMPLATE)).screenshot).toBe("data:image/png;base64,abcd");
+  const broken = new UtmAdapter({
+    runner: fake, utmctlPath: "utmctl", osascriptPath: "osascript", scriptPath: "fixed.js",
+    screenshotReader: async () => { throw new Error("unreadable"); },
+  });
+  expect((await broken.getVm(TEMPLATE)).screenshot).toBeUndefined();
+  const unsafe = new UtmAdapter({
+    runner: fake, utmctlPath: "utmctl", osascriptPath: "osascript", scriptPath: "fixed.js",
+    screenshotReader: async () => "javascript:alert(1)",
+  });
+  expect((await unsafe.getVm(TEMPLATE)).screenshot).toBeUndefined();
+  fake.vms[0] = { ...fake.vms[0], displays: [], vncArguments: ["-vnc", "127.0.0.1:1"] };
+  const serialOnly = new UtmAdapter({
+    runner: fake, utmctlPath: "utmctl", osascriptPath: "osascript", scriptPath: "fixed.js",
+    screenshotReader: async () => "data:image/png;base64,abcd",
+  });
+  expect((await serialOnly.getVm(TEMPLATE)).screenshot).toBeUndefined();
+});
+
 test("missing or unsafe consoles are not advertised", async () => {
   const fake = new FakeRunner();
   fake.vms[0] = { ...fake.vms[0], status: "started", serialPorts: [{ interface: "tcp" }],
@@ -142,6 +198,8 @@ test("malformed UTM detail and console output becomes a typed protocol error", a
   fake.detailOutput = "not JSON";
   await expect(port.getVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "get" });
   fake.detailOutput = JSON.stringify({ ...fake.vms[0], serialPorts: "bad" });
+  await expect(port.getVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "get" });
+  fake.detailOutput = JSON.stringify({ ...fake.vms[0], displays: [{ hardware: 1 }] });
   await expect(port.getVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "get" });
   fake.detailOutput = JSON.stringify({ ...fake.vms[0], vncArguments: [42] });
   await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "vnc" });
@@ -189,4 +247,28 @@ test("configuration rejects unsupported keys and active VMs", async () => {
   await expect(port.configureVm(TEMPLATE, { network: "bridged" as never })).rejects.toBeInstanceOf(UtmError);
   fake.vms[0].status = "started";
   await expect(port.configureVm(TEMPLATE, { network: "offline" })).rejects.toMatchObject({ code: "conflict" });
+});
+
+test("saved screenshots are read only from the matching VM package", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "utm-shots-"));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const bundle = path.join(root, "Disposable.utm");
+  await fs.mkdir(bundle);
+  await fs.writeFile(path.join(bundle, "config.plist"), `<plist><key>UUID</key><string>${TEMPLATE}</string></plist>`);
+  await fs.writeFile(path.join(bundle, "screenshot.png"), png);
+  const other = path.join(root, "Other.utm");
+  await fs.mkdir(other);
+  await fs.writeFile(path.join(other, "config.plist"), "<plist><key>UUID</key><string>33333333-3333-4333-8333-333333333333</string></plist>");
+  await fs.writeFile(path.join(other, "screenshot.png"), png);
+  const outside = path.join(root, "escape.png");
+  await fs.writeFile(outside, png);
+  expect(await readSavedScreenshot(root, TEMPLATE)).toBe(`data:image/png;base64,${png.toString("base64")}`);
+  await fs.rm(path.join(bundle, "screenshot.png"));
+  await fs.symlink(outside, path.join(bundle, "screenshot.png"));
+  expect(await readSavedScreenshot(root, TEMPLATE)).toBeUndefined();
+  await fs.rm(path.join(bundle, "screenshot.png"));
+  expect(await readSavedScreenshot(root, TEMPLATE)).toBeUndefined();
+  await fs.writeFile(path.join(bundle, "screenshot.png"), Buffer.from("not a png"));
+  expect(await readSavedScreenshot(root, TEMPLATE)).toBeUndefined();
+  await fs.rm(root, { recursive: true, force: true });
 });

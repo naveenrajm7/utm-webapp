@@ -29,6 +29,16 @@ export default function VMManager() {
     dismissActionError,
   } = useVmList();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [wideLayout, setWideLayout] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 801px)");
+    const apply = () => setWideLayout(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     document.title = selected ? `${selected.name} · UTM Web` : "UTM Web";
@@ -49,7 +59,10 @@ export default function VMManager() {
           onClick={() => setSidebarOpen(false)}
         />
       )}
-      <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
+      <aside
+        className={`sidebar ${sidebarOpen ? "is-open" : ""}`}
+        style={wideLayout ? { width: sidebarWidth, flexBasis: sidebarWidth } : undefined}
+      >
         <div className="sidebar-titlebar">
           <button
             type="button"
@@ -75,6 +88,42 @@ export default function VMManager() {
             void refresh();
           }}
         />
+        {wideLayout && (
+          <div
+            className="sidebar-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize virtual machine list"
+            aria-valuemin={200}
+            aria-valuemax={480}
+            aria-valuenow={sidebarWidth}
+            tabIndex={0}
+            onPointerDown={(event) => {
+              const handle = event.currentTarget;
+              const startX = event.clientX;
+              const startWidth = sidebarWidth;
+              handle.setPointerCapture(event.pointerId);
+              const move = (pointer: PointerEvent) => {
+                const next = startWidth + pointer.clientX - startX;
+                setSidebarWidth(Math.min(480, Math.max(200, next)));
+              };
+              const stop = () => {
+                handle.removeEventListener("pointermove", move);
+                handle.removeEventListener("pointerup", stop);
+              };
+              handle.addEventListener("pointermove", move);
+              handle.addEventListener("pointerup", stop);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") {
+                setSidebarWidth((width) => Math.min(480, width + 16));
+              }
+              if (event.key === "ArrowLeft") {
+                setSidebarWidth((width) => Math.max(200, width - 16));
+              }
+            }}
+          />
+        )}
       </aside>
 
       <div className="app-main">
@@ -93,7 +142,7 @@ export default function VMManager() {
             <i className="bi bi-layout-sidebar" />
           </button>
           <div className="toolbar-title">
-            <span className="toolbar-title-name">
+            <span className="toolbar-title-name" title={selected?.name}>
               {selected ? selected.name : "UTM Web"}
             </span>
             {selected && (
