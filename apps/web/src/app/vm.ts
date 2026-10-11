@@ -5,6 +5,10 @@ export interface VM {
   backend: string;
   capabilities: Record<string, unknown>;
   network?: string;
+  networkInterfaces?: unknown;
+  icon?: string;
+  /** PNG data URL for a saved UTM screenshot. */
+  screenshot?: string;
   memoryMiB?: number;
   cpuCores?: number;
   architecture?: string;
@@ -12,7 +16,6 @@ export interface VM {
   memoryMb?: number;
   serialPorts?: unknown;
   drives?: unknown;
-  networkInterfaces?: unknown;
 }
 
 export type VmAction = "start" | "stop";
@@ -110,6 +113,43 @@ export const filterVms = (vms: VM[], query: string): VM[] => {
   });
 };
 
+export const formatCpuCores = (cores: number | undefined): string => {
+  if (cores == null || Number.isNaN(cores)) return "Unknown";
+  if (cores === 0) return "Automatic";
+  return String(cores);
+};
+
+const NETWORK_MODES: Record<string, string> = {
+  offline: "Offline",
+  shared: "Shared Network",
+  emulated: "Emulated VLAN",
+  host: "Host Only",
+  bridged: "Bridged",
+};
+
+const modeText = (mode: string): string => NETWORK_MODES[mode] ?? mode;
+
+/** Prefer UTM's configured NIC modes over the collapsed offline/shared/other summary. */
+export const networkLabel = (
+  vm: Pick<VM, "network" | "networkInterfaces">,
+): string => {
+  if (Array.isArray(vm.networkInterfaces) && vm.networkInterfaces.length > 0) {
+    const labels = vm.networkInterfaces.map((item, index) => {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const mode = (item as { mode?: unknown }).mode;
+        if (typeof mode === "string" && mode.trim()) return modeText(mode.trim());
+      }
+      return labelOf(item, index);
+    });
+    return labels.join(", ");
+  }
+  if (typeof vm.network === "string" && vm.network.trim()) {
+    if (vm.network === "other") return "Other";
+    return NETWORK_MODES[vm.network] ?? vm.network;
+  }
+  return "Unknown";
+};
+
 export const formatMemory = (mb: number | undefined): string => {
   if (mb == null || Number.isNaN(mb)) return "Unknown";
   if (mb >= 1024) {
@@ -130,8 +170,58 @@ export interface OsBadge {
   tone: "ubuntu" | "windows" | "apple" | "linux" | "android" | "generic";
 }
 
-/** The API reports no guest OS, so the sidebar icon is inferred from the name. */
-export const osBadge = (vm: Pick<VM, "name" | "backend">): OsBadge => {
+const UBUNTU_ICONS = new Set(["ubuntu", "kubuntu", "lubuntu", "xubuntu"]);
+const WINDOWS_ICONS = new Set([
+  "windows",
+  "windows-11",
+  "windows7",
+  "windows-xp",
+  "windows-9x",
+]);
+const APPLE_ICONS = new Set(["mac", "ios", "apple-tv"]);
+const ANDROID_ICONS = new Set(["android", "cyanogenmod"]);
+const LINUX_ICONS = new Set([
+  "linux",
+  "debian",
+  "fedora",
+  "arch-linux",
+  "alpine",
+  "centos",
+  "almalinux",
+  "gentoo",
+  "mint",
+  "nixos",
+  "suse",
+  "red-hat",
+  "elementary-os",
+  "pop-os",
+  "slackware",
+  "openwrt",
+  "knoppix",
+  "backtrack",
+  "mandriva",
+  "pardus",
+  "sabayon",
+  "kali",
+]);
+
+const badgeForIcon = (icon: string | undefined): OsBadge | null => {
+  if (!icon) return null;
+  const name = icon.trim().toLowerCase().replace(/\.png$/, "");
+  if (!name || name === "generic") return null;
+  if (UBUNTU_ICONS.has(name)) return { icon: "bi-ubuntu", tone: "ubuntu" };
+  if (WINDOWS_ICONS.has(name)) return { icon: "bi-windows", tone: "windows" };
+  if (APPLE_ICONS.has(name)) return { icon: "bi-apple", tone: "apple" };
+  if (ANDROID_ICONS.has(name)) return { icon: "bi-android2", tone: "android" };
+  if (LINUX_ICONS.has(name)) return { icon: "bi-terminal-fill", tone: "linux" };
+  return null;
+};
+
+/** Prefer UTM's configured icon, then the guest name. */
+export const osBadge = (vm: Pick<VM, "name" | "backend" | "icon">): OsBadge =>
+  badgeForIcon(vm.icon) ?? osBadgeFromName(vm);
+
+const osBadgeFromName = (vm: Pick<VM, "name" | "backend">): OsBadge => {
   const name = vm.name.toLowerCase();
   if (name.includes("ubuntu")) return { icon: "bi-ubuntu", tone: "ubuntu" };
   if (name.includes("windows")) return { icon: "bi-windows", tone: "windows" };

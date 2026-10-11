@@ -16,7 +16,10 @@ export interface VmCapabilities {
   networkPresets: NetworkPreset[];
   /** Configured PTY serial console, independent of power state. */
   serial: boolean;
-  /** Configured loopback QEMU VNC target, independent of power state. */
+  /**
+   * QEMU graphical display plus a loopback VNC transport.
+   * Independent of power state: true while stopped when both are configured.
+   */
   display: boolean;
 }
 
@@ -27,6 +30,12 @@ export interface Vm {
   backend: VmBackend;
   capabilities: VmCapabilities;
   network: NetworkPreset | "other";
+  /** Modes reported by UTM, including values outside the offline/shared presets. */
+  networkInterfaces?: { mode: string }[];
+  /** Built-in UTM icon name, without a file extension. */
+  icon?: string;
+  /** Saved screenshot from the VM package, as a PNG data URL. Detail responses only. */
+  screenshot?: string;
   memoryMiB?: number;
   cpuCores?: number;
   architecture?: string;

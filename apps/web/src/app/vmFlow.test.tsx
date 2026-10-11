@@ -5,8 +5,9 @@ import { setApiKey } from "./apiAuth";
 import ConsoleGate, { consoleAvailability } from "./components/ConsoleGate";
 import VMActionControls from "./components/VMActionControls";
 import VMInfo from "./components/VMInfo";
+import VMList from "./components/VMList";
 import { VmStore } from "./vmStore";
-import type { VM } from "./vm";
+import { formatCpuCores, networkLabel, osBadge, type VM } from "./vm";
 
 const ID = "12345678-1234-1234-1234-123456789abc";
 const stopped: VM = {
@@ -196,5 +197,50 @@ describe("VM flow with a fake /v1 API", () => {
     expect(store.getSnapshot().selected?.capabilities).toEqual(running.capabilities);
     store.dismissActionError();
     expect(store.getSnapshot().actionError).toBeNull();
+  });
+
+  it("presents a serial-only VM without a graphical preview", () => {
+    const serialOnly: VM = {
+      ...stopped,
+      name: "vagrant_test_default_1744595654130_77151",
+      icon: "debian",
+      cpuCores: 0,
+      network: "other",
+      networkInterfaces: [{ mode: "bridged" }],
+      capabilities: { start: true, stop: false, display: false, serial: true },
+    };
+    expect(osBadge(serialOnly).tone).toBe("linux");
+    expect(formatCpuCores(0)).toBe("Automatic");
+    expect(networkLabel(serialOnly)).toBe("Bridged");
+    expect(networkLabel({ network: "shared" })).toBe("Shared Network");
+    const tabs = renderToStaticMarkup(
+      <VMInfo vm={serialOnly} busy={false} onAction={() => {}}
+        detailsLoading={false} detailsError={null} />,
+    );
+    expect(tabs).toContain(">Serial</button>");
+    expect(tabs).not.toContain(">Display</button>");
+    expect(tabs).toContain("no graphical display");
+    expect(tabs).not.toContain("<h1>");
+    expect(tabs).toContain("Automatic");
+    expect(tabs).toContain("Bridged");
+    expect(tabs).not.toContain("vm-screen");
+    const withPreview = renderToStaticMarkup(
+      <VMInfo vm={{ ...stopped, screenshot: "data:image/png;base64,abcd" }} busy={false}
+        onAction={() => {}} detailsLoading={false} detailsError={null} />,
+    );
+    expect(withPreview).toContain('src="data:image/png;base64,abcd"');
+    expect(withPreview).toContain(">Display</button>");
+    const rejected = renderToStaticMarkup(
+      <VMInfo vm={{ ...stopped, screenshot: "https://evil.example/preview.png" }} busy={false}
+        onAction={() => {}} detailsLoading={false} detailsError={null} />,
+    );
+    expect(rejected).not.toContain("evil.example");
+    expect(rejected).toContain("No saved preview");
+    const list = renderToStaticMarkup(
+      <VMList vms={[serialOnly]} loading={false} error={null} selectedUUID={null}
+        busyUuid={null} onSelectVM={() => {}} onAction={() => {}} onRetry={() => {}} />,
+    );
+    expect(list).toContain(`title="${serialOnly.name}"`);
+    expect(list).toContain(`aria-label="Start ${serialOnly.name}"`);
   });
 });

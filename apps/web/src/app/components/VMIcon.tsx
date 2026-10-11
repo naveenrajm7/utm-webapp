@@ -4,7 +4,7 @@ const VMIcon = ({
   vm,
   size = "small",
 }: {
-  vm: Pick<VM, "name" | "backend">;
+  vm: Pick<VM, "name" | "backend" | "icon">;
   size?: "small" | "large";
 }) => {
   const badge = osBadge(vm);

@@ -5,18 +5,18 @@ import { getAuthenticatedWebSocketUrl } from "../apiAuth";
 import {
   backendLabel,
   canOpenConsole,
+  formatCpuCores,
   formatMemory,
   hasCapability,
   isBusyStatus,
   isStopped,
+  networkLabel,
   serialAvailability,
   statusLabel,
-  statusTone,
   summarizeList,
   type VM,
   type VmAction,
 } from "../vm";
-import VMIcon from "./VMIcon";
 import VMManagementControls from "./VMManagementControls";
 import type { VmOperation } from "../vmStore";
 import VNCViewer from "./VNCViewer";
@@ -138,68 +138,103 @@ const VMInfo = ({
     return null;
   };
 
+  const graphical = hasCapability(vm, "display");
+  const serialOnly = !graphical && hasCapability(vm, "serial");
+  const screenshot =
+    graphical &&
+    typeof vm.screenshot === "string" &&
+    vm.screenshot.startsWith("data:image/png;base64,")
+      ? vm.screenshot
+      : undefined;
+  const previewClass = graphical
+    ? screenshot
+      ? "vm-preview has-shot"
+      : "vm-preview is-graphic"
+    : serialOnly
+      ? "vm-preview is-serial"
+      : "vm-preview is-plain";
+
+  const previewBody = () => {
+    if (transitioning) {
+      return (
+        <div className="vm-preview-copy">
+          <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
+          <p>{busy ? "Updating" : statusLabel(vm.status)}…</p>
+        </div>
+      );
+    }
+    if (consoleReady && consoles.length > 0) {
+      return (
+        <div className="vm-preview-copy">
+          {serialOnly && (
+            <p>Serial console only. This virtual machine has no graphical display.</p>
+          )}
+          {consoles.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="screen-open"
+              onClick={() => setView(item.id)}
+            >
+              <i className={`bi ${item.icon}`} aria-hidden="true" />
+              Open {item.label}
+            </button>
+          ))}
+        </div>
+      );
+    }
+    if (canRun) {
+      return (
+        <div className="vm-preview-copy">
+          <button
+            type="button"
+            className="screen-play"
+            onClick={runAndOpen}
+            disabled={busy}
+            aria-label={`Run ${vm.name}`}
+            title="Run"
+          >
+            <i className="bi bi-play-fill" aria-hidden="true" />
+          </button>
+          {serialOnly ? (
+            <p>Serial console only. This virtual machine has no graphical display.</p>
+          ) : graphical && !screenshot ? (
+            <p>No saved preview.</p>
+          ) : null}
+        </div>
+      );
+    }
+    return (
+      <div className="vm-preview-copy">
+        <p>
+          {serialOnly
+            ? "Serial console only. This virtual machine has no graphical display."
+            : consoleReady
+              ? "This virtual machine has no browser console. Use it in the UTM window on your Mac."
+              : `${statusLabel(vm.status)}.`}
+        </p>
+      </div>
+    );
+  };
+
   const details = (
     <div className="vm-detail">
-      <header className="vm-detail-header">
-        <VMIcon vm={vm} size="large" />
-        <div>
-          <h1>{vm.name}</h1>
-          <p>
-            <span
-              className={`status-dot ${statusTone(vm.status)}`}
-              aria-hidden="true"
-            />
-            {statusLabel(vm.status)} · {backendLabel(vm.backend)}
-          </p>
-        </div>
-      </header>
+      <div className={previewClass}>
+        {screenshot && (
+          // Saved frames arrive as data URLs, which the image optimizer cannot fetch.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            className="vm-preview-image"
+            src={screenshot}
+            alt={`Saved preview of ${vm.name}`}
+          />
+        )}
+        {previewBody()}
+      </div>
 
       {onManagement && <VMManagementControls key={vm.id} vm={vm} busy={transitioning} onSubmit={onManagement} />}
 
-      <div className="vm-detail-grid">
-        <div className="vm-screen">
-          {transitioning ? (
-            <div className="vm-screen-content">
-              <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
-              <p>{busy ? "Updating" : statusLabel(vm.status)}…</p>
-            </div>
-          ) : consoleReady && consoles.length > 0 ? (
-            <div className="vm-screen-content">
-              {consoles.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="screen-open"
-                  onClick={() => setView(item.id)}
-                >
-                  <i className={`bi ${item.icon}`} aria-hidden="true" />
-                  Open {item.label}
-                </button>
-              ))}
-            </div>
-          ) : canRun ? (
-            <button
-              type="button"
-              className="screen-play"
-              onClick={runAndOpen}
-              disabled={busy}
-              aria-label={`Run ${vm.name}`}
-              title="Run"
-            >
-              <i className="bi bi-play-fill" aria-hidden="true" />
-            </button>
-          ) : (
-            <div className="vm-screen-content">
-              <p>
-                {consoleReady
-                  ? "This virtual machine has no browser console. Use it in the UTM window on your Mac."
-                  : `${vm.name} is ${statusLabel(vm.status).toLowerCase()}.`}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="group-box">
+      <div className="group-box">
           <h2>Details</h2>
           {detailsLoading && <p className="vm-list-empty">Loading details…</p>}
           {detailsError && (
@@ -228,7 +263,7 @@ const VMInfo = ({
               {formatMemory(vm.memoryMiB)}
             </DetailRow>
             <DetailRow icon="bi-grid-3x3-gap" label="CPU cores">
-              {vm.cpuCores ?? "Unknown"}
+              {formatCpuCores(vm.cpuCores)}
             </DetailRow>
             {vm.drives != null && (
               <DetailRow icon="bi-hdd" label="Drives">
@@ -236,7 +271,7 @@ const VMInfo = ({
               </DetailRow>
             )}
             <DetailRow icon="bi-globe" label="Network">
-              {vm.network || summarizeList(vm.networkInterfaces, "Unknown")}
+              {networkLabel(vm)}
             </DetailRow>
             <DetailRow icon="bi-terminal" label="Serial">
               {serial.text}
@@ -263,7 +298,6 @@ const VMInfo = ({
             </DetailRow>
           </dl>
         </div>
-      </div>
     </div>
   );
 

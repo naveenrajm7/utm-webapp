@@ -6,6 +6,9 @@ export interface Vm {
   backend: string;
   capabilities: Record<string, boolean | string[]>;
   network?: string;
+  networkInterfaces?: { mode: string }[];
+  icon?: string;
+  screenshot?: string;
   memoryMiB?: number;
   cpuCores?: number;
   architecture?: string;

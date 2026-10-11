@@ -1,6 +1,7 @@
 import path from "node:path";
 import { UtmError } from "./errors";
 import { ProcessResult, ProcessRunner, RunOptions, SpawnRunner } from "./process";
+import { acceptScreenshot, readSavedScreenshot, utmDocumentsDir } from "./screenshot";
 import { GuestExecOptions, GuestExecResult, HostCapabilities, UtmPort, Vm, VmBackend, VmConfiguration, VmStatus, VncTarget } from "./types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -27,7 +28,9 @@ interface RawVm {
   cpuCores?: unknown;
   networkInterfaces?: unknown;
   serialPorts?: unknown;
+  displays?: unknown;
   vncArguments?: unknown;
+  icon?: unknown;
   architecture?: unknown;
   machine?: unknown;
   drives?: unknown;
@@ -40,6 +43,8 @@ export interface UtmAdapterOptions {
   utmctlPath?: string;
   osascriptPath?: string;
   scriptPath?: string;
+  /** Detail-only. Defaults to UTM's saved screenshot.png in the Documents container. */
+  screenshotReader?: (id: string) => Promise<string | undefined>;
 }
 
 function validId(id: string): string {
@@ -115,6 +120,16 @@ function vncTarget(args: unknown, operation: string): VncTarget | null {
   return null;
 }
 
+/** A configured QEMU display card. Empty and "none" do not drive a graphical console. */
+function hasGraphicalDisplay(displays: unknown): boolean {
+  if (!Array.isArray(displays)) return false;
+  return displays.some(display => {
+    if (!record(display) || typeof display.hardware !== "string") return false;
+    const hardware = display.hardware.trim().toLowerCase();
+    return hardware !== "" && hardware !== "none";
+  });
+}
+
 function failure(operation: string, result: ProcessResult): UtmError {
   const detail = (result.stderr || result.stdout).trim().slice(0, 512);
   if (/application (?:isn't running|not found|can't be found)|OSStatus -600/i.test(detail)) return new UtmError("unavailable", operation, detail);
@@ -132,6 +147,7 @@ export class UtmAdapter implements UtmPort {
   private readonly scriptPath: string;
   private cliAvailable?: boolean;
   private cliVersion: string | null = null;
+  private readonly screenshotReader: (id: string) => Promise<string | undefined>;
   private inventoryVersion: string | null = null;
 
   constructor(options: UtmAdapterOptions = {}) {
@@ -139,6 +155,7 @@ export class UtmAdapter implements UtmPort {
     this.utmctlPath = options.utmctlPath ?? "/Applications/UTM.app/Contents/MacOS/utmctl";
     this.osascriptPath = options.osascriptPath ?? "/usr/bin/osascript";
     this.scriptPath = options.scriptPath ?? path.join(__dirname, "scripts", "utm.jxa.js");
+    this.screenshotReader = options.screenshotReader ?? (id => readSavedScreenshot(utmDocumentsDir(), id));
   }
 
   private async run(file: string, args: string[], timeoutMs = DEFAULT_TIMEOUT_MS, maxOutputBytes = MAX_OUTPUT_BYTES): Promise<ProcessResult> {
@@ -201,6 +218,12 @@ export class UtmAdapter implements UtmPort {
     if (raw.networkInterfaces !== undefined && (!Array.isArray(raw.networkInterfaces) || raw.networkInterfaces.some(nic => !record(nic) || typeof nic.mode !== "string"))) {
       throw new UtmError("protocol_error", operation, "UTM returned malformed network configuration");
     }
+    if (raw.displays !== undefined && (!Array.isArray(raw.displays) || raw.displays.some(display => !record(display) || typeof display.hardware !== "string"))) {
+      throw new UtmError("protocol_error", operation, "UTM returned malformed display configuration");
+    }
+    if (raw.icon !== undefined && typeof raw.icon !== "string") {
+      throw new UtmError("protocol_error", operation, "UTM returned a malformed icon");
+    }
     const backend = (["qemu", "apple", "unavailable"].includes(String(raw.backend)) ? raw.backend : "unavailable") as VmBackend;
     const status = (["stopped", "starting", "started", "pausing", "paused", "resuming", "stopping"].includes(String(raw.status)) ? raw.status : "unknown") as VmStatus;
     const modes = Array.isArray(raw.networkInterfaces) ? raw.networkInterfaces.map(nic => (nic as { mode: string }).mode) : [];
@@ -208,9 +231,14 @@ export class UtmAdapter implements UtmPort {
     const usable = backend !== "unavailable";
     const management = status === "stopped" ? this.managementEvidence(backend) : { clone: false, configure: false, delete: false };
     const serialPorts = raw.serialPorts as { interface: string }[] | undefined;
-    const display = backend === "qemu" && vncTarget(raw.vncArguments, operation) !== null;
+    const graphical = hasGraphicalDisplay(raw.displays);
+    const vnc = backend === "qemu" ? vncTarget(raw.vncArguments, operation) : null;
+    const display = usable && graphical && vnc !== null;
+    const icon = typeof raw.icon === "string" ? raw.icon.trim() : "";
     return {
       id: raw.id, name: raw.name, status, backend, network,
+      ...(Array.isArray(raw.networkInterfaces) ? { networkInterfaces: modes.map(mode => ({ mode })) } : {}),
+      ...(icon ? { icon } : {}),
       ...(typeof raw.memoryMiB === "number" ? { memoryMiB: raw.memoryMiB } : {}),
       ...(typeof raw.cpuCores === "number" ? { cpuCores: raw.cpuCores } : {}),
       ...(typeof raw.architecture === "string" ? { architecture: raw.architecture } : {}),
@@ -226,7 +254,7 @@ export class UtmAdapter implements UtmPort {
         guestAgent: backend === "qemu" ? "unknown" : "unavailable",
         networkPresets: [],
         serial: usable && !!serialPorts?.some(port => port.interface === "ptty"),
-        display: usable && display
+        display
       }
     };
   }
@@ -251,6 +279,14 @@ export class UtmAdapter implements UtmPort {
     const raw = parseJson(await this.jxa("detail", [id]), "get") as RawVm;
     const vm = this.normalize(raw, "get");
     if (vm.id.toLowerCase() !== id.toLowerCase()) throw new UtmError("protocol_error", "get", "UTM returned a different VM");
+    if (vm.capabilities.display) {
+      try {
+        const screenshot = acceptScreenshot(await this.screenshotReader(vm.id));
+        if (screenshot) vm.screenshot = screenshot;
+      } catch {
+        // A missing or unreadable preview must not hide the rest of the VM.
+      }
+    }
     return vm;
   }
 
@@ -274,7 +310,12 @@ export class UtmAdapter implements UtmPort {
     const vm = this.normalize(raw, "vnc");
     if (vm.id.toLowerCase() !== id.toLowerCase()) throw new UtmError("protocol_error", "vnc", "UTM returned a different VM");
     const target = vm.backend === "qemu" ? vncTarget(raw.vncArguments, "vnc") : null;
-    if (!target) throw new UtmError("unsupported", "vnc", "VM has no loopback VNC display");
+    if (!vm.capabilities.display || !target) {
+      const message = hasGraphicalDisplay(raw.displays)
+        ? "VM has no loopback VNC display"
+        : "VM has no graphical display device";
+      throw new UtmError("unsupported", "vnc", message);
+    }
     if (vm.status !== "started") throw new UtmError("conflict", "vnc", "VM must be started");
     return target;
   }
