@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import supertest from "supertest";
 import type { Vm as AdapterVm } from "@repo/utm-adapter";
 import { createServer } from "../server";
@@ -7,6 +10,12 @@ import { VmPowerJobs } from "../v1/vmPowerJobs";
 
 const KEY = "local-vm-test-key";
 const ID = "12345678-1234-1234-1234-123456789abc";
+const temporaryDirectories: string[] = [];
+const journalPath = () => {
+  const directory = mkdtempSync(join(tmpdir(), "utm-api-power-test-"));
+  temporaryDirectories.push(directory);
+  return join(directory, "jobs.json");
+};
 
 const makeVm = (status: "stopped" | "started"): AdapterVm => ({
   id: ID,
@@ -52,8 +61,9 @@ const makePorts = () => {
     stopVm: async () => { status = "stopped"; },
   };
   const utm = new LocalUtmPort(adapter);
-  const power = new VmPowerJobs(adapter);
-  return { utm, power, adapter };
+  const path = journalPath();
+  const power = new VmPowerJobs(adapter, path);
+  return { utm, power, adapter, path };
 };
 
 const completed = async (power: VmPowerJobs, id: string) => {
@@ -67,6 +77,10 @@ const completed = async (power: VmPowerJobs, id: string) => {
 
 describe("local UTM web backend", () => {
   beforeEach(() => { process.env.UTM_API_KEY = KEY; });
+  afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0))
+      rmSync(directory, { recursive: true, force: true });
+  });
 
   it("serves actual adapter fields and completes browser power jobs without the sandbox service", async () => {
     const ports = makePorts();
@@ -112,7 +126,7 @@ describe("local UTM web backend", () => {
       getVm: async () => { await gate; return makeVm("stopped"); },
       startVm: async () => {},
       stopVm: async () => {},
-    });
+    }, journalPath());
     const first = power.startVm(ID);
     await expect(power.startVm(ID)).rejects.toMatchObject({ code: "conflict" });
     release();
@@ -134,16 +148,17 @@ describe("local UTM web backend", () => {
     expect((await completed(ports.power, first.body.jobId)).state).toBe("succeeded");
   });
 
-  it("returns an unknown job after API restart while actual VM state remains available", async () => {
+  it("restores a completed job after API restart while actual VM state remains available", async () => {
     const ports = makePorts();
     const auth = { "x-api-key": KEY };
     const first = supertest(createServer(ports));
     const started = await first.post(`/v1/vms/${ID}/start`).set(auth).expect(202);
     expect((await completed(ports.power, started.body.jobId)).state).toBe("succeeded");
 
-    const restarted = supertest(createServer({ utm: ports.utm, power: new VmPowerJobs(ports.adapter) }));
-    expect((await restarted.get(`/v1/jobs/${started.body.jobId}`).set(auth).expect(404)).body.error.code)
-      .toBe("not_found");
+    const restarted = supertest(createServer({ utm: ports.utm,
+      power: new VmPowerJobs(ports.adapter, ports.path) }));
+    expect((await restarted.get(`/v1/jobs/${started.body.jobId}`).set(auth).expect(200)).body)
+      .toMatchObject({ state: "succeeded", result: { vmId: ID, status: "started" } });
     expect((await restarted.get(`/v1/vms/${ID}`).set(auth).expect(200)).body.status)
       .toBe("started");
     expect((await restarted.get("/status_vm").query({ uuid: ID }).set(auth).expect(200)).body.vmStatus)
