@@ -32,7 +32,7 @@ const respond = (line: string): string => {
 export const attachDemoShell = (term: Terminal): (() => void) => {
   let line = "";
   term.write(
-    "Ubuntu 24.04.1 LTS demo ttyAMA0\r\n\r\n" +
+    "UTM Web preview ttyAMA0\r\n\r\n" +
       "This serial console is simulated. Run UTM Web on a Mac for a live VM.\r\n\r\n" +
       PROMPT,
   );

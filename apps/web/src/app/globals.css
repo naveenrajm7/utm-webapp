@@ -974,12 +974,16 @@ p {
   max-width: 520px;
 }
 
-.demo-display pre {
-  margin: 0;
-  padding: 24px;
-  color: #d0d0d0;
-  font-family: var(--mono);
-  font-size: 14px;
+.demo-display-boot {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .demo-display-note {

@@ -88,6 +88,6 @@ const LiveVNCViewer = ({ url }: VNCViewerProps) => {
 };
 
 const VNCViewer = ({ url }: VNCViewerProps) =>
-  IS_DEMO ? <DemoDisplay /> : <LiveVNCViewer url={url} />;
+  IS_DEMO ? <DemoDisplay url={url} /> : <LiveVNCViewer url={url} />;
 
 export default VNCViewer;

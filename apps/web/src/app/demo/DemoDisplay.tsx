@@ -1,16 +1,22 @@
 "use client";
 
-const DemoDisplay = () => (
-  <div className="vnc-shell demo-display">
-    <pre>
-      {`Ubuntu 24.04.1 LTS demo tty1
+import VMIcon from "../components/VMIcon";
+import { DEMO_VMS } from "./fixtures";
 
-demo login: _`}
-    </pre>
-    <p className="demo-display-note">
-      Simulated display. A live VNC session needs UTM Web running on your Mac.
-    </p>
-  </div>
-);
+const DemoDisplay = ({ url }: { url: string }) => {
+  const vmId = new URL(url).searchParams.get("vmUUID");
+  const vm = DEMO_VMS.find((item) => item.id === vmId);
+  return (
+    <div className="vnc-shell demo-display">
+      <div className="demo-display-boot">
+        {vm && <VMIcon vm={vm} size="large" />}
+        <p>{vm?.name ?? "Virtual machine"}</p>
+      </div>
+      <p className="demo-display-note">
+        Simulated display. A live VNC session needs UTM Web running on your Mac.
+      </p>
+    </div>
+  );
+};
 
 export default DemoDisplay;
