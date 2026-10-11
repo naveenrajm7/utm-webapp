@@ -39,7 +39,7 @@ const makePorts = () => {
   const adapter = {
     getCapabilities: async () => ({
       utmVersion: "5.0.6", utmctlAvailable: true, jxaAvailable: true,
-      clone: false, configure: false, guestExec: false,
+      clone: false, configure: false, delete: false, guestExec: false,
     }),
     listVms: async () => [makeVm(status)],
     getVm: async (id: string) => {
