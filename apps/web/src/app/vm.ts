@@ -26,6 +26,9 @@ const CAPABILITY_KEYS = {
   serial: ["serial", "serialConsole"],
   display: ["display", "vnc", "vncDisplay"],
   guestExec: ["guestExec", "guestExecution"],
+  clone: ["clone"],
+  configure: ["configure"],
+  delete: ["delete"],
 } as const;
 
 export const hasCapability = (

@@ -32,22 +32,24 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
+    Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
 
-const errorMessage = (data: unknown, fallback: string): string => {
-  if (!data || typeof data !== "object") return fallback;
+const errorDetails = (data: unknown, fallback: string): { message: string; code?: string } => {
+  if (!data || typeof data !== "object") return { message: fallback };
   const record = data as {
     error?: string | { message?: string; code?: string };
     message?: string;
   };
-  if (typeof record.error === "string") return record.error;
-  if (record.error && typeof record.error.message === "string")
-    return record.error.message;
-  return record.message || fallback;
+  if (typeof record.error === "string") return { message: record.error };
+  if (record.error && typeof record.error === "object")
+    return { message: record.error.message || fallback, code: record.error.code };
+  return { message: record.message || fallback };
 };
 
 export const requestJson = async <T>(
@@ -58,11 +60,10 @@ export const requestJson = async <T>(
   if (init?.body) headers.set("Content-Type", "application/json");
   const response = await apiFetch(path, { ...init, headers });
   const data: unknown = await response.json().catch(() => null);
-  if (!response.ok)
-    throw new ApiError(
-      errorMessage(data, `Request failed (${response.status})`),
-      response.status,
-    );
+  if (!response.ok) {
+    const error = errorDetails(data, `Request failed (${response.status})`);
+    throw new ApiError(error.message, response.status, error.code);
+  }
   if (data === null)
     throw new Error("The API returned an empty or invalid response.");
   return data as T;
@@ -76,6 +77,23 @@ export const listVms = () => requestJson<VM[]>("/v1/vms");
 export const getVm = (id: string) => requestJson<VM>(vmPath(id));
 export const powerVm = (id: string, action: VmAction) =>
   requestJson<{ jobId: string }>(`${vmPath(id)}/${action}`, { method: "POST" });
+export type VmSettingsPatch = {
+  name?: string;
+  memoryMiB?: number;
+  cpuCores?: number;
+};
+export const cloneVm = (id: string, name: string) =>
+  requestJson<{ jobId: string }>(`${vmPath(id)}/clone`, {
+    method: "POST", body: JSON.stringify({ name }),
+  });
+export const configureVm = (id: string, patch: VmSettingsPatch) =>
+  requestJson<{ jobId: string }>(vmPath(id), {
+    method: "PATCH", body: JSON.stringify(patch),
+  });
+export const deleteVm = (id: string, confirmName: string) =>
+  requestJson<{ jobId: string }>(vmPath(id), {
+    method: "DELETE", body: JSON.stringify({ confirmName }),
+  });
 export const listTemplates = () => requestJson<Template[]>("/v1/templates");
 export const createSandbox = (
   templateId: string,
@@ -97,7 +115,14 @@ export const destroySandbox = (id: string) =>
 export const getJob = (id: string) =>
   requestJson<Job>(`/v1/jobs/${encodeURIComponent(id)}`);
 
-export const jobError = (job: Job): string =>
-  typeof job.error === "string"
-    ? job.error
-    : job.error?.message || "The job failed.";
+export const jobError = (job: Job): string => {
+  if (typeof job.error === "string") return job.error;
+  const message = job.error?.message || "The job failed.";
+  return job.error?.code ? `${job.error.code}: ${message}` : message;
+};
+
+export const actionErrorMessage = (caught: unknown, fallback: string): string => {
+  if (caught instanceof ApiError)
+    return caught.code ? `${caught.code}: ${caught.message}` : caught.message;
+  return caught instanceof Error ? caught.message : fallback;
+};

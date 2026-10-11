@@ -10,6 +10,7 @@ const CLONE = "22222222-2222-4222-8222-222222222222";
 
 type FakeVm = {
   id: string; name: string; status: string; backend: string;
+  memoryMiB?: number; cpuCores?: number;
   networkInterfaces: { mode: string }[];
   serialPorts?: { interface: string }[];
   displays?: { hardware: string }[];
@@ -22,19 +23,24 @@ type FakeVm = {
 
 class FakeRunner implements ProcessRunner {
   calls: { file: string; args: string[]; options: RunOptions }[] = [];
-  vms: FakeVm[] = [{ id: TEMPLATE, name: "Disposable Template", status: "stopped", backend: "qemu", networkInterfaces: [{ mode: "shared" }] }];
+  vms: FakeVm[] = [{ id: TEMPLATE, name: "Disposable Template", status: "stopped", backend: "qemu", memoryMiB: 4096, cpuCores: 0, networkInterfaces: [{ mode: "shared" }] }];
   cliAvailable = true;
+  cliVersion = "5.0.6";
   inventoryVersion: string | null = "5.0.6";
   fail?: { command: string; stderr: string; exitCode: number };
   detailOutput?: string;
   serialOutput?: string;
+  cloneCount = 1;
+  ignoreConfigure = false;
+  ignoreDelete = false;
+  failAfterMutation?: { command: string; error: UtmError };
 
   async run(file: string, args: readonly string[], options: RunOptions): Promise<ProcessResult> {
     const list = [...args];
     this.calls.push({ file, args: list, options });
     const jxa = file === "osascript";
     const command = jxa ? list[3] : list[0];
-    if (command === "version") return { stdout: this.cliAvailable ? "UTM 5.0.6\n" : "", stderr: "", exitCode: this.cliAvailable ? 0 : 134 };
+    if (command === "version") return { stdout: this.cliAvailable ? `UTM ${this.cliVersion}\n` : "", stderr: "", exitCode: this.cliAvailable ? 0 : 134 };
     if (this.fail?.command === command) return { stdout: "", stderr: this.fail.stderr, exitCode: this.fail.exitCode };
     if (jxa && command === "list") return { stdout: JSON.stringify({ version: this.inventoryVersion, vms: this.vms }), stderr: "", exitCode: 0 };
     if (jxa && command === "detail") return { stdout: this.detailOutput ?? JSON.stringify(this.vm(list[4])), stderr: "", exitCode: 0 };
@@ -42,16 +48,22 @@ class FakeRunner implements ProcessRunner {
     if (jxa && command === "configure") {
       const vm = this.vm(list[4]);
       const config = JSON.parse(list[5]);
-      if (config.network) vm.networkInterfaces = config.network === "offline" ? [] : [{ mode: "shared" }];
-      if (config.name) vm.name = config.name;
+      if (!this.ignoreConfigure) {
+        if (config.name !== undefined) vm.name = config.name;
+        if (config.memoryMiB !== undefined) vm.memoryMiB = config.memoryMiB;
+        if (config.cpuCores !== undefined) vm.cpuCores = config.cpuCores;
+      }
     }
     if (command === "clone") {
-      const name = jxa ? list[5] : list[2];
-      this.vms.push({ ...this.vm(TEMPLATE), id: CLONE, name });
+      const name = jxa ? list[5] : list[3];
+      for (let i = 0; i < this.cloneCount; i++) {
+        this.vms.push({ ...this.vm(TEMPLATE), id: i === 0 ? CLONE : "33333333-3333-4333-8333-333333333333", name });
+      }
     }
     if (command === "start") this.vm(jxa ? list[4] : list[1]).status = "started";
-    if (command === "stop") this.vm(jxa ? list[4] : list[2]).status = "stopped";
-    if (command === "delete") this.vms = this.vms.filter(vm => vm.id !== (jxa ? list[4] : list[1]));
+    if (command === "stop") this.vm(jxa ? list[4] : list[1]).status = "stopped";
+    if (command === "delete" && !this.ignoreDelete) this.vms = this.vms.filter(vm => vm.id !== (jxa ? list[4] : list[1]));
+    if (this.failAfterMutation?.command === command) throw this.failAfterMutation.error;
     if (command === "exec") {
       if (jxa) return { stdout: JSON.stringify({ stdoutData: Buffer.from("ok\n").toString("base64"), stderrData: "", exitCode: 0 }), stderr: "", exitCode: 0 };
       return { stdout: "ok\n", stderr: "", exitCode: 0 };
@@ -70,23 +82,26 @@ function adapter(fake: FakeRunner): UtmPort {
   return new UtmAdapter({ runner: fake, utmctlPath: "utmctl", osascriptPath: "osascript", scriptPath: "fixed.js" });
 }
 
-test("disposable clone flows through the port to guest execution and deletion", async () => {
+test("validated QEMU clone, stopped configuration, and delete reconcile by UUID", async () => {
   const fake = new FakeRunner();
   const port = adapter(fake);
-  const clone = await port.cloneVm(TEMPLATE, "Disposable Run");
+  const clone = await port.cloneVm(TEMPLATE, " Disposable Run ");
   expect(clone.id).toBe(CLONE);
-  await port.configureVm(CLONE, { network: "offline" });
-  expect((await port.getVm(CLONE)).network).toBe("offline");
+  expect(fake.calls.find(call => call.args[0] === "clone")?.args).toEqual(["clone", TEMPLATE, "--name", "Disposable Run"]);
+  const configured = await port.configureVm(CLONE, { name: "Edited Clone", memoryMiB: 3584, cpuCores: 2 });
+  expect(configured).toMatchObject({ id: CLONE, name: "Edited Clone", memoryMiB: 3584, cpuCores: 2, network: "shared" });
+  expect(JSON.parse(fake.calls.find(call => call.args[3] === "configure")!.args[5])).toEqual({ name: "Edited Clone", memoryMiB: 3584, cpuCores: 2 });
   await port.startVm(CLONE);
   const result = await port.execInGuest(CLONE, ["/bin/echo", "a b", "$(touch /tmp/never)"], { timeoutMs: 2_000 });
   expect(result).toEqual({ stdout: "ok\n", stderr: "", exitCode: 0 });
   expect(fake.calls.find(call => call.args[0] === "exec")?.args).toEqual(["exec", CLONE, "--cmd", "/bin/echo", "a b", "$(touch /tmp/never)"]);
   await port.stopVm(CLONE);
+  expect(fake.calls.find(call => call.args[0] === "stop")?.args).toEqual(["stop", CLONE, "--force"]);
   await port.deleteVm(CLONE);
   expect((await port.listVms()).map(vm => vm.id)).toEqual([TEMPLATE]);
 });
 
-test("inventory normalizes backend, network, and capabilities", async () => {
+test("capabilities require exact installed version, validated backend, and stopped state", async () => {
   const fake = new FakeRunner();
   fake.vms.push({ id: CLONE, name: "Apple", status: "started", backend: "apple", networkInterfaces: [{ mode: "bridged" }] });
   const port = adapter(fake);
@@ -96,9 +111,16 @@ test("inventory normalizes backend, network, and capabilities", async () => {
   expect(vms[1].networkInterfaces).toEqual([{ mode: "bridged" }]);
   expect(vms[1].capabilities.guestExec).toBe(false);
   expect(vms[1].capabilities.stop).toBe(true);
-  expect(vms[0].capabilities).toMatchObject({ clone: false, configure: false, delete: false, guestExec: false });
+  expect(vms[0].capabilities).toMatchObject({ clone: true, configure: true, delete: true, guestExec: false, networkPresets: [] });
+  expect(vms[1].capabilities).toMatchObject({ clone: false, configure: false, delete: false });
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ clone: true, configure: true, delete: true });
   fake.inventoryVersion = null;
-  expect(await port.getCapabilities()).toMatchObject({ utmVersion: "5.0.6", clone: false, configure: false, guestExec: false });
+  expect(await port.getCapabilities()).toMatchObject({ utmVersion: "5.0.6", clone: true, configure: true, delete: true, guestExec: false });
+  fake.vms[0].status = "starting";
+  expect((await port.listVms())[0].capabilities).toMatchObject({ clone: false, configure: false, delete: false });
+  fake.vms[0].status = "stopped";
+  fake.vms[0].backend = "unavailable";
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ clone: false, configure: false, delete: false });
 });
 
 test("QEMU detail and configured consoles stay stable while stopped and running", async () => {
@@ -216,13 +238,17 @@ test("invalid VM identifiers and guest argv launch no process", async () => {
   expect(fake.calls).toHaveLength(0);
 });
 
-test("JXA controls are used when utmctl is unavailable", async () => {
+test("unvalidated JXA clone/delete fallback is disabled while power control still works", async () => {
   const fake = new FakeRunner(); fake.cliAvailable = false;
   const port = adapter(fake);
-  const clone = await port.cloneVm(TEMPLATE, "Disposable Run");
-  await port.startVm(clone.id);
+  await expect(port.cloneVm(TEMPLATE, "Disposable Run")).rejects.toMatchObject({ code: "unsupported" });
+  await expect(port.configureVm(TEMPLATE, { memoryMiB: 2048 })).rejects.toMatchObject({ code: "unsupported" });
+  await expect(port.deleteVm(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
+  await port.startVm(TEMPLATE);
   expect(fake.calls.some(call => call.file === "osascript" && call.args[3] === "start")).toBe(true);
-  expect(await port.execInGuest(clone.id, ["/bin/true"])).toEqual({ stdout: "ok\n", stderr: "", exitCode: 0 });
+  await port.stopVm(TEMPLATE);
+  expect(fake.calls.some(call => call.file === "osascript" && call.args[3] === "stop")).toBe(true);
+  expect(await port.execInGuest(TEMPLATE, ["/bin/true"]).catch(error => error.code)).toBe("conflict");
   expect((await port.getCapabilities()).utmctlAvailable).toBe(false);
 });
 
@@ -244,9 +270,86 @@ test("guest nonzero exit is returned while agent failure is typed", async () => 
 test("configuration rejects unsupported keys and active VMs", async () => {
   const fake = new FakeRunner();
   const port = adapter(fake);
-  await expect(port.configureVm(TEMPLATE, { network: "bridged" as never })).rejects.toBeInstanceOf(UtmError);
+  await expect(port.configureVm(TEMPLATE, { network: "bridged" } as never)).rejects.toBeInstanceOf(UtmError);
   fake.vms[0].status = "started";
-  await expect(port.configureVm(TEMPLATE, { network: "offline" })).rejects.toMatchObject({ code: "conflict" });
+  await expect(port.configureVm(TEMPLATE, { memoryMiB: 2048 })).rejects.toMatchObject({ code: "conflict" });
+});
+
+test("configuration validates every supplied value before invoking UTM", async () => {
+  const fake = new FakeRunner();
+  const port = adapter(fake);
+  const invalid = [null, [], {}, { network: "offline" }, { other: 1 }, { name: null },
+    { name: " " }, { name: "x".repeat(101) }, { name: "bad\nname" }, { name: 17 },
+    { memoryMiB: null }, { memoryMiB: undefined }, { memoryMiB: 127 }, { memoryMiB: 1_048_577 }, { memoryMiB: 128.5 },
+    { cpuCores: null }, { cpuCores: undefined }, { cpuCores: -1 }, { cpuCores: 257 }, { cpuCores: 1.5 }];
+  for (const value of invalid) {
+    await expect(port.configureVm(TEMPLATE, value as never)).rejects.toMatchObject({ code: "invalid_input" });
+  }
+  await expect(port.cloneVm(TEMPLATE, "\u0001bad")).rejects.toMatchObject({ code: "invalid_input" });
+  expect(fake.calls).toHaveLength(0);
+});
+
+test("management operations reject unvalidated backend and version", async () => {
+  for (const backend of ["apple", "unavailable"]) {
+    const fake = new FakeRunner(); fake.vms[0].backend = backend;
+    const port = adapter(fake);
+    await expect(port.cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "unsupported" });
+    await expect(port.configureVm(TEMPLATE, { cpuCores: 0 })).rejects.toMatchObject({ code: "unsupported" });
+    await expect(port.deleteVm(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
+    expect(fake.calls.filter(call => ["clone", "configure", "delete"].includes(call.args[0]) || ["clone", "configure", "delete"].includes(call.args[3]))).toHaveLength(0);
+  }
+  const fake = new FakeRunner(); fake.cliVersion = "5.0.7"; fake.inventoryVersion = "5.0.7";
+  const port = adapter(fake);
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ clone: false, configure: false, delete: false });
+  expect(await port.getCapabilities()).toMatchObject({ clone: false, configure: false, delete: false });
+  await expect(port.cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "unsupported" });
+  const mismatch = new FakeRunner(); mismatch.inventoryVersion = "5.0.7";
+  const mismatchedPort = adapter(mismatch);
+  expect((await mismatchedPort.listVms())[0].capabilities).toMatchObject({ clone: false, configure: false, delete: false });
+  expect(await mismatchedPort.getCapabilities()).toMatchObject({ utmVersion: "5.0.7", clone: false, configure: false, delete: false });
+});
+
+test("running and transitioning VM state conflicts precede capability checks", async () => {
+  for (const status of ["started", "starting", "stopping", "paused"]) {
+    const fake = new FakeRunner(); fake.vms[0].status = status; fake.vms[0].backend = "apple";
+    const port = adapter(fake);
+    await expect(port.cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "conflict" });
+    await expect(port.configureVm(TEMPLATE, { memoryMiB: 2048 })).rejects.toMatchObject({ code: "conflict" });
+    await expect(port.deleteVm(TEMPLATE)).rejects.toMatchObject({ code: "conflict" });
+  }
+});
+
+test("clone returns a unique new UUID and reports ambiguous or missing outcomes", async () => {
+  const ambiguous = new FakeRunner(); ambiguous.cloneCount = 2;
+  await expect(adapter(ambiguous).cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "protocol_error", operation: "clone" });
+  const missing = new FakeRunner(); missing.cloneCount = 0;
+  await expect(adapter(missing).cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "protocol_error", operation: "clone" });
+  const timeoutAfterClone = new FakeRunner();
+  timeoutAfterClone.failAfterMutation = { command: "clone", error: new UtmError("timeout", "clone", "timed out") };
+  expect((await adapter(timeoutAfterClone).cloneVm(TEMPLATE, "Copy")).id).toBe(CLONE);
+  expect(timeoutAfterClone.calls.filter(call => call.args[0] === "clone")).toHaveLength(1);
+  const timeoutWithoutClone = new FakeRunner(); timeoutWithoutClone.cloneCount = 0;
+  timeoutWithoutClone.failAfterMutation = { command: "clone", error: new UtmError("timeout", "clone", "timed out") };
+  await expect(adapter(timeoutWithoutClone).cloneVm(TEMPLATE, "Copy")).rejects.toMatchObject({ code: "timeout" });
+});
+
+test("configure and delete require readback; timeout deletion reconciles inventory", async () => {
+  const unchanged = new FakeRunner(); unchanged.ignoreConfigure = true;
+  await expect(adapter(unchanged).configureVm(TEMPLATE, { memoryMiB: 2048 })).rejects.toMatchObject({ code: "protocol_error", operation: "configure" });
+  const remains = new FakeRunner(); remains.ignoreDelete = true;
+  await expect(adapter(remains).deleteVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "delete" });
+  const timeoutDeleted = new FakeRunner();
+  timeoutDeleted.failAfterMutation = { command: "delete", error: new UtmError("timeout", "delete", "timed out") };
+  await expect(adapter(timeoutDeleted).deleteVm(TEMPLATE)).resolves.toBeUndefined();
+  const timeoutRemains = new FakeRunner(); timeoutRemains.ignoreDelete = true;
+  timeoutRemains.failAfterMutation = { command: "delete", error: new UtmError("timeout", "delete", "timed out") };
+  await expect(adapter(timeoutRemains).deleteVm(TEMPLATE)).rejects.toMatchObject({ code: "timeout" });
+});
+
+test("JXA configuration errors are typed and do not fall back to CLI", async () => {
+  const fake = new FakeRunner(); fake.fail = { command: "configure", stderr: "Error: VM_NOT_STOPPED", exitCode: 1 };
+  await expect(adapter(fake).configureVm(TEMPLATE, { name: "Copy" })).rejects.toMatchObject({ code: "conflict", operation: "configure" });
+  expect(fake.calls.filter(call => call.args[3] === "configure")).toHaveLength(1);
 });
 
 test("saved screenshots are read only from the matching VM package", async () => {

@@ -1,8 +1,18 @@
-import { getJob, getVm, jobError, listVms, powerVm, type Job } from "./v1";
+import {
+  actionErrorMessage, ApiError, cloneVm, configureVm, deleteVm, getJob, getVm,
+  jobError, listVms, powerVm, type Job, type VmSettingsPatch,
+} from "./v1";
 import { friendlyListError, hasCapability, type VM, type VmAction } from "./vm";
 
-type VmApi = Pick<typeof import("./v1"), "getJob" | "getVm" | "listVms" | "powerVm">;
-const api: VmApi = { getJob, getVm, listVms, powerVm };
+type VmApi = Pick<typeof import("./v1"),
+  "getJob" | "getVm" | "listVms" | "powerVm" |
+  "cloneVm" | "configureVm" | "deleteVm">;
+const api: VmApi = { getJob, getVm, listVms, powerVm, cloneVm, configureVm, deleteVm };
+export type VmOperation =
+  | { action: "clone"; name: string }
+  | { action: "configure"; patch: VmSettingsPatch }
+  | { action: "delete"; confirmName: string };
+type Action = VmAction | VmOperation["action"];
 
 export interface VmSnapshot {
   vms: VM[];
@@ -10,7 +20,7 @@ export interface VmSnapshot {
   error: string | null;
   busyUuid: string | null;
   actionError: string | null;
-  actionJob: { action: VmAction; state: Job["state"] } | null;
+  actionJob: { action: Action; state: Job["state"] } | null;
   selectedId: string | null;
   selected: VM | null;
   detailsLoading: boolean;
@@ -28,9 +38,12 @@ export class VmStore {
   private listRequest = 0;
   private detailRequest = 0;
   private checkingJob = false;
-  private pending: { id: string; action: VmAction } | null = null;
+  private pending: { id: string; action: Action } | null = null;
 
-  constructor(private readonly client: VmApi = api) {}
+  private readonly client: VmApi;
+  constructor(client: Partial<VmApi> = {}) {
+    this.client = { ...api, ...client };
+  }
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -129,22 +142,47 @@ export class VmStore {
     }
   };
 
-  runAction = async (id: string, action: VmAction) => {
+  runAction = async (id: string, action: VmAction) =>
+    this.runJob(id, action, () => this.client.powerVm(id, action));
+
+  runManagement = async (id: string, operation: VmOperation) => {
+    const vm = this.state.selected?.id === id
+      ? this.state.selected : this.state.vms.find((item) => item.id === id);
+    if (operation.action === "delete" && operation.confirmName !== vm?.name) {
+      this.publish({ actionError: "conflict: Type the exact VM name to confirm deletion." });
+      return;
+    }
+    return this.runJob(id, operation.action, () => {
+      if (operation.action === "clone")
+        return this.client.cloneVm(id, operation.name);
+      if (operation.action === "configure")
+        return this.client.configureVm(id, operation.patch);
+      return this.client.deleteVm(id, operation.confirmName);
+    });
+  };
+
+  private runJob = async (
+    id: string, action: Action, submit: () => Promise<{ jobId: string }>,
+  ) => {
     if (this.state.busyUuid) return;
     const vm = this.state.selected?.id === id
       ? this.state.selected : this.state.vms.find((item) => item.id === id);
     if (!vm || !hasCapability(vm, action)) return;
     this.publish({ actionError: null, busyUuid: id });
     try {
-      const result = await this.client.powerVm(id, action);
+      const result = await submit();
       if (!result.jobId) throw new Error("The API did not return a job ID.");
       this.pending = { id: result.jobId, action };
       this.publish({ actionJob: { action, state: "queued" } });
       await this.pollJob();
     } catch (caught) {
+      const message = actionErrorMessage(caught, `Could not ${action} the virtual machine`);
       this.publish({
         busyUuid: null,
-        actionError: caught instanceof Error ? caught.message : `Could not ${action} the virtual machine`,
+        actionError: (action === "clone" || action === "delete") &&
+          !(caught instanceof ApiError)
+          ? `${message} Refresh the VM list and check the outcome before trying again.`
+          : message,
       });
       await this.refreshActualState();
     }
@@ -167,7 +205,9 @@ export class VmStore {
       if (this.pending !== pending) return;
       await this.refreshActualState();
       this.finishJob(
-        "The power job is unavailable. Check its current status before retrying.",
+        pending.action === "clone" || pending.action === "delete"
+          ? "The job is unavailable. Check the refreshed VM list and confirm the outcome before trying again."
+          : "The power job is unavailable. Check its current status before retrying.",
       );
     } finally {
       this.checkingJob = false;

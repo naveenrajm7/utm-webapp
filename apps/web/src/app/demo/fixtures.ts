@@ -15,7 +15,7 @@ export const DEMO_VMS: VM[] = [
     icon: "ubuntu",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 64 GB" }, { name: "USB CD/DVD" }],
-    capabilities: { start: true, stop: true, serial: true, display: true },
+    capabilities: { start: false, stop: true, serial: true, display: true, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e02",
@@ -31,7 +31,7 @@ export const DEMO_VMS: VM[] = [
     screenshot: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAAFoCAIAAABIUN0GAAAFoElEQVR4nO3VMRGAMADAwMpgYGCoAPQjpCoQgYtm4O9eQLaM45wAwGYjLwCAHzJgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoBAOeBnvQDQMmAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAgWzA17wBgM0MGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoCAAQNAwIABIGDAABAwYAAIGDAABAwYAAIGDAABAwaAgAEDQMCAASBgwAAQMGAACBgwAAQMGAACBgwAAQMGgIABA0DAgAEgYMAAEDBgAAgYMAAEDBgAAgYMAAEDBoDABzzlhK43m0vyAAAAAElFTkSuQmCC",
     serialPorts: [],
     drives: [{ name: "NVMe 128 GB" }],
-    capabilities: { start: true, stop: true, display: true },
+    capabilities: { start: true, stop: false, display: true, clone: true, configure: true, delete: true, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e03",
@@ -45,7 +45,7 @@ export const DEMO_VMS: VM[] = [
     network: "shared",
     icon: "mac",
     serialPorts: "unavailable",
-    capabilities: { start: true, stop: true },
+    capabilities: { start: true, stop: false, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e04",
@@ -61,7 +61,7 @@ export const DEMO_VMS: VM[] = [
     icon: "debian",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 20 GB" }],
-    capabilities: { start: true, stop: true, serial: true, guestExec: true },
+    capabilities: { start: true, stop: false, serial: true, clone: true, configure: true, delete: true, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e05",
@@ -76,7 +76,7 @@ export const DEMO_VMS: VM[] = [
     icon: "fedora",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 40 GB" }],
-    capabilities: { start: true, stop: true, serial: true, display: true },
+    capabilities: { start: false, stop: true, serial: true, display: true, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
 ];
 

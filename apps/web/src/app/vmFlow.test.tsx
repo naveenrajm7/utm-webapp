@@ -110,7 +110,7 @@ describe("VM flow with a fake /v1 API", () => {
     );
     expect(runningHeader).toContain('aria-label="Open display in a new tab"');
     expect(runningHeader).not.toContain('aria-label="Open display in a new tab" disabled');
-    expect(runningHeader).toContain('aria-label="Stop virtual machine"');
+    expect(runningHeader).toContain('aria-label="Force stop virtual machine"');
   });
 
   it("does not advertise unsupported consoles or mount a direct console route", async () => {

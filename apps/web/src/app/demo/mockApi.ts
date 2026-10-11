@@ -1,8 +1,21 @@
 import type { Job, Sandbox } from "../v1";
-import type { VM } from "../vm";
+import { isStopped, type VM } from "../vm";
 import { DEMO_TEMPLATES, DEMO_VMS } from "./fixtures";
 
 const JOB_MS = 1200;
+const present = (vm: VM): VM => ({
+  ...vm,
+  capabilities: {
+    ...vm.capabilities,
+    clone: isStopped(vm.status) && vm.capabilities.clone === true,
+    configure: isStopped(vm.status) && vm.capabilities.configure === true,
+    delete: isStopped(vm.status) && vm.capabilities.delete === true,
+    start: isStopped(vm.status),
+    stop: vm.status === "started" || vm.status === "running",
+    guestExec: false,
+    networkPresets: [],
+  },
+});
 
 interface DemoJob extends Job {
   startedAt: number;
@@ -14,6 +27,7 @@ const vms: VM[] = DEMO_VMS.map((vm) => ({
   capabilities: { ...vm.capabilities },
 }));
 const jobs = new Map<string, DemoJob>();
+const cloneReservations = new Set<string>();
 const sandboxes = new Map<string, Sandbox>();
 let sequence = 0;
 
@@ -36,9 +50,15 @@ const settleJobs = () => {
   jobs.forEach((job) => {
     if (job.state === "succeeded" || job.state === "failed") return;
     if (now - job.startedAt >= JOB_MS) {
-      const result = job.complete?.();
-      job.state = "succeeded";
-      if (result) job.result = result;
+      try {
+        const result = job.complete?.();
+        job.state = "succeeded";
+        if (result) job.result = result;
+      } catch (caught) {
+        job.state = "failed";
+        job.error = { code: "conflict",
+          message: caught instanceof Error ? caught.message : "The job failed." };
+      }
     } else if (now - job.startedAt >= JOB_MS / 4) {
       job.state = "running";
     }
@@ -74,23 +94,89 @@ const simulatedOutput = (argv: string[]): string => {
 
 const handlePower = (vm: VM, action: string): Response => {
   if (action === "start") {
-    if (vm.status === "started")
+    if (!isStopped(vm.status))
       return fail(409, "conflict", `${vm.name} is already running.`);
     vm.status = "starting";
     return json({
       jobId: queueJob(() => {
         vm.status = "started";
+        return { vmId: vm.id, status: "started" };
       }),
-    });
+    }, 202);
   }
-  if (vm.status === "stopped")
+  if (isStopped(vm.status))
     return fail(409, "conflict", `${vm.name} is already stopped.`);
   vm.status = "stopping";
   return json({
     jobId: queueJob(() => {
       vm.status = "stopped";
+      return { vmId: vm.id, status: "stopped" };
     }),
+  }, 202);
+};
+
+const validName = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length >= 1 &&
+  value.trim().length <= 100 && !Array.from(value.trim()).some((char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || (code >= 127 && code <= 159);
   });
+
+const management = (vm: VM, method: string, action: string | undefined,
+  body: Record<string, unknown>): Response => {
+  const operation = action === "clone" && method === "POST" ? "clone"
+    : !action && method === "PATCH" ? "configure"
+    : !action && method === "DELETE" ? "delete" : null;
+  if (!operation) return fail(404, "not_found", "Unknown route.");
+  if (!isStopped(vm.status))
+    return fail(409, "conflict", "Stop this virtual machine before changing it.");
+  if (vm.capabilities[operation] !== true)
+    return fail(422, "unsupported", "This operation is unavailable for this VM.");
+  if (operation === "clone") {
+    if (Object.keys(body).length !== 1 || !validName(body.name))
+      return fail(400, "invalid_input", "Enter a valid clone name.");
+    const name = (body.name as string).trim();
+    if (vms.some((item) => item.name === name) || cloneReservations.has(name))
+      return fail(409, "conflict", "A virtual machine with this name already exists.");
+    const vmId = crypto.randomUUID();
+    cloneReservations.add(name);
+    return json({ jobId: queueJob(() => {
+      try {
+        vms.push({ ...vm, id: vmId, name, status: "stopped",
+          capabilities: { ...vm.capabilities } });
+        return { vmId };
+      } finally {
+        cloneReservations.delete(name);
+      }
+    }) }, 202);
+  }
+  if (operation === "configure") {
+    const keys = Object.keys(body);
+    if (!keys.length || keys.some((key) =>
+      !["name", "memoryMiB", "cpuCores"].includes(key)) ||
+      ("name" in body && !validName(body.name)) ||
+      ("memoryMiB" in body && (!Number.isInteger(body.memoryMiB) ||
+        (body.memoryMiB as number) < 128 || (body.memoryMiB as number) > 1048576)) ||
+      ("cpuCores" in body && (!Number.isInteger(body.cpuCores) ||
+        (body.cpuCores as number) < 0 || (body.cpuCores as number) > 256)))
+      return fail(400, "invalid_input", "Invalid VM settings.");
+    return json({ jobId: queueJob(() => {
+      if (typeof body.name === "string") vm.name = body.name.trim();
+      if (typeof body.memoryMiB === "number") vm.memoryMiB = body.memoryMiB;
+      if (typeof body.cpuCores === "number") vm.cpuCores = body.cpuCores;
+      return { vmId: vm.id, status: "stopped" };
+    }) }, 202);
+  }
+  if (Object.keys(body).length !== 1 || typeof body.confirmName !== "string")
+    return fail(400, "invalid_input", "Enter the exact VM name.");
+  if (body.confirmName !== vm.name)
+    return fail(409, "conflict", "The confirmation does not match the VM name.");
+  return json({ jobId: queueJob(() => {
+    if (body.confirmName !== vm.name) throw new Error("VM name changed.");
+    const index = vms.findIndex((item) => item.id === vm.id);
+    if (index >= 0) vms.splice(index, 1);
+    return { vmId: vm.id, deleted: true };
+  }) }, 202);
 };
 
 const createSandbox = (body: Record<string, unknown>): Response => {
@@ -131,10 +217,17 @@ export const demoFetch = async (
 ): Promise<Response> => {
   settleJobs();
   const method = (init?.method || "GET").toUpperCase();
-  const body =
-    typeof init?.body === "string"
-      ? (JSON.parse(init.body) as Record<string, unknown>)
-      : {};
+  let body: Record<string, unknown> = {};
+  if (typeof init?.body === "string") {
+    try {
+      const parsed: unknown = JSON.parse(init.body);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return fail(400, "invalid_input", "Expected a JSON object.");
+      body = parsed as Record<string, unknown>;
+    } catch {
+      return fail(400, "invalid_input", "Expected a JSON object.");
+    }
+  }
   const segments = new URL(path, "http://demo.invalid").pathname
     .split("/")
     .filter(Boolean)
@@ -145,15 +238,18 @@ export const demoFetch = async (
   const [, resource, id, action] = segments;
 
   if (resource === "capabilities")
-    return json({ utmVersion: "5.0.6 (preview)", demo: true });
+    return json({ utmVersion: "5.0.6 (preview)",
+      features: { clone: true, configure: true, delete: true,
+        guestExec: false, utmctl: true, jxa: true }, demo: true });
 
   if (resource === "vms") {
-    if (!id) return json(vms);
+    if (!id) return json(vms.map(present));
     const vm = vms.find((item) => item.id === id);
     if (!vm) return fail(404, "not_found", "Virtual machine not found.");
-    if (!action && method === "GET") return json(vm);
+    if (!action && method === "GET") return json(present(vm));
     if (method === "POST" && (action === "start" || action === "stop"))
       return handlePower(vm, action);
+    return management(vm, method, action, body);
   }
 
   if (resource === "templates") return json(DEMO_TEMPLATES);

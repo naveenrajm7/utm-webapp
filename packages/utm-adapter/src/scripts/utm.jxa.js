@@ -55,6 +55,7 @@ function run(argv) {
     return JSON.stringify({ ok: true });
   }
   if (action === "stop") {
+    // UTM's scripting stop defaults to force, matching utmctl stop --force.
     utm.stop(find(argv[1]));
     return JSON.stringify({ ok: true });
   }
@@ -89,12 +90,6 @@ function run(argv) {
     if (update.name !== undefined) patch.name = update.name;
     if (update.memoryMiB !== undefined) patch.memory = update.memoryMiB;
     if (update.cpuCores !== undefined) patch.cpuCores = update.cpuCores;
-    if (update.network === "offline") patch.networkInterfaces = [];
-    if (update.network === "shared") {
-      // A new interface replaces every inherited NIC, including bridged NICs.
-      // UTM assigns a fresh MAC to the new interface.
-      patch.networkInterfaces = [{ mode: "shared" }];
-    }
     utm.updateConfiguration(vm, { "with": patch });
     return JSON.stringify({ ok: true });
   }

@@ -52,11 +52,11 @@ export interface HostCapabilities {
   jxaAvailable: boolean;
   clone: boolean;
   configure: boolean;
+  delete: boolean;
   guestExec: boolean;
 }
 
 export interface VmConfiguration {
-  network?: NetworkPreset;
   name?: string;
   memoryMiB?: number;
   cpuCores?: number;

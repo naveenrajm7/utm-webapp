@@ -23,6 +23,7 @@ export const useVmList = () => {
     ...state,
     refresh: store.refresh,
     runAction: store.runAction,
+    runManagement: store.runManagement,
     select: store.select,
     dismissActionError: store.dismissActionError,
   };

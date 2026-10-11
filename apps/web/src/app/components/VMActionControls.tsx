@@ -27,7 +27,7 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
   };
 
   const handleStop = () => {
-    if (window.confirm(`Stop ${vm.name}?`)) {
+    if (window.confirm(`Force stop ${vm.name}?`)) {
       onAction(vm.id, "stop");
     }
   };
@@ -76,8 +76,8 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
           type="button"
           className="icon-button is-stop"
           onClick={handleStop}
-          title="Stop"
-          aria-label="Stop virtual machine"
+          title="Force stop"
+          aria-label="Force stop virtual machine"
           disabled={transitioning}
         >
           <i

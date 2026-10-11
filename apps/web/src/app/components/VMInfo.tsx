@@ -17,6 +17,8 @@ import {
   type VM,
   type VmAction,
 } from "../vm";
+import VMManagementControls from "./VMManagementControls";
+import type { VmOperation } from "../vmStore";
 import VNCViewer from "./VNCViewer";
 import XTerminal from "./xterminal";
 
@@ -24,6 +26,7 @@ interface VMInfoProps {
   vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
+  onManagement?: (uuid: string, operation: VmOperation) => void;
   detailsLoading: boolean;
   detailsError: string | null;
 }
@@ -53,6 +56,7 @@ const VMInfo = ({
   vm,
   busy,
   onAction,
+  onManagement,
   detailsLoading,
   detailsError,
 }: VMInfoProps) => {
@@ -227,6 +231,8 @@ const VMInfo = ({
         )}
         {previewBody()}
       </div>
+
+      {onManagement && <VMManagementControls key={vm.id} vm={vm} busy={transitioning} onSubmit={onManagement} />}
 
       <div className="group-box">
           <h2>Details</h2>
