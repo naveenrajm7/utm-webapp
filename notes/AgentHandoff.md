@@ -49,12 +49,14 @@ After those three branches land, an integration owner wires the API console reso
 
 Only after that gate, plan direct VM management as the next wave: validate adapter clone/configure/delete on a disposable clone, expose typed asynchronous /v1 operations with explicit destructive confirmation, then add matching web controls. VM creation and snapshots require separate capability research and validation. Sandbox and MCP remain paused until guest execution reliability and VM ownership rules are proven.
 
-## Worktree setup
+## Prepared worktrees and PR handoff
 
-From the clean, updated main checkout, create three new sibling worktrees. The old agent worktrees remain attached to already merged branches.
+These worktrees already exist at the same local main baseline. Do not create them again. The old agent worktrees remain attached to already merged branches.
 
-    git worktree add -b codex/phase1-adapter ../utm-webapp-phase1-adapter main
-    git worktree add -b codex/phase1-api ../utm-webapp-phase1-api main
-    git worktree add -b codex/phase1-web ../utm-webapp-phase1-web main
+| Lane | Branch | Worktree |
+| --- | --- | --- |
+| Adapter | codex/phase1-adapter | ../utm-webapp-phase1-adapter |
+| API | codex/phase1-api | ../utm-webapp-phase1-api |
+| Web | codex/phase1-web | ../utm-webapp-phase1-web |
 
-Open each target worktree as that agent's writable workspace. Run npm ci there. Each agent commits only its owned paths, reports tests and remaining Mac checks, and leaves cross-lane package-lock.json resolution to integration.
+Open each target worktree as that agent's writable workspace. Run npm ci there. Each agent commits only its owned paths, pushes its branch, and opens a PR targeting main. The PR description must list code changes, exact build/lint/test commands and results, Mac/UTM checks performed, and every check that could not be run with its reason and concrete follow-up steps for another agent. Leave cross-lane package-lock.json conflict resolution to integration. A named disposable VM is required before any live mutating or console check.
