@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { getAuthenticatedWebSocketUrl } from "../apiAuth";
-import { getVm } from "../v1";
 import {
   canOpenConsole,
   hasCapability,
@@ -20,15 +19,14 @@ interface VMInfoProps {
   vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
+  detailsLoading: boolean;
+  detailsError: string | null;
 }
 
 type TabId = "display" | "serial" | "details";
 
-const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
+const VMInfo = ({ vm, busy, onAction, detailsLoading, detailsError }: VMInfoProps) => {
   const [tab, setTab] = useState<TabId>("details");
-  const [details, setDetails] = useState<VM | null>(null);
-  const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -39,45 +37,20 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
           ? "serial"
           : "details",
     );
-    setDetails(null);
-    setDetailsError(null);
-    setDetailsLoading(true);
-    let cancelled = false;
-    getVm(vm.id)
-      .then((data) => {
-        if (!cancelled) setDetails(data);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled)
-          setDetailsError(
-            error instanceof Error
-              ? error.message
-              : "Could not load virtual machine details",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setDetailsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [vm.id]);
 
-  const current =
-    details && details.id === vm.id
-      ? { ...vm, ...details, status: vm.status }
-      : vm;
+  const current = vm;
   const serial =
-    current.serialPorts == null
+    hasCapability(current, "serial")
       ? {
-          available: hasCapability(current, "serial"),
-          text: hasCapability(current, "serial")
-            ? "Available"
-            : current.backend === "qemu"
-              ? "Not reported"
-              : "Unavailable",
+          available: true,
+          text: current.serialPorts == null
+            ? "Configured"
+            : serialAvailability(current.serialPorts).available
+              ? serialAvailability(current.serialPorts).text
+              : "Configured",
         }
-      : serialAvailability(current.serialPorts);
+      : { available: false, text: "Unavailable" };
   const consoleReady = canOpenConsole(vm.status);
   const transitioning = busy || isBusyStatus(vm.status);
   const tabs: { id: TabId; label: string; icon: string }[] = [
@@ -92,11 +65,11 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
   const activeTab = tabs.some((item) => item.id === tab) ? tab : tabs[0].id;
 
   const renderGate = (kind: "display" | "serial") => {
-    if (transitioning && !consoleReady) {
+    if (transitioning) {
       return (
         <div className="vm-pane-message">
           <p>
-            {statusLabel(vm.status)} {vm.name}…
+            {busy ? "Updating" : statusLabel(vm.status)} {vm.name}…
           </p>
         </div>
       );
@@ -118,13 +91,6 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
               Start virtual machine
             </button>
           )}
-        </div>
-      );
-    }
-    if (kind === "serial" && !serial.available) {
-      return (
-        <div className="vm-pane-message">
-          <p>{serial.text}</p>
         </div>
       );
     }
@@ -241,38 +207,6 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
                   summarizeList(current.networkInterfaces, "Unknown")}
               </dd>
             </div>
-            {current.backend === "qemu" &&
-              (!hasCapability(current, "serial") ||
-                !hasCapability(current, "display")) && (
-                <div>
-                  <dt>Console connections</dt>
-                  <dd className="console-try-links">
-                    {!hasCapability(current, "serial") && (
-                      <a
-                        className="text-button"
-                        href={`/terminal/${encodeURIComponent(vm.id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Try serial console
-                      </a>
-                    )}
-                    {!hasCapability(current, "display") && (
-                      <a
-                        className="text-button"
-                        href={`/vnc/${encodeURIComponent(vm.id)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Try VNC display
-                      </a>
-                    )}
-                    <span>
-                      Availability has not been confirmed for this VM.
-                    </span>
-                  </dd>
-                </div>
-              )}
             <div>
               <dt>UUID</dt>
               <dd className="vm-uuid">

@@ -74,12 +74,7 @@ export const isRunning = (status: string): boolean => {
 };
 
 export const canOpenConsole = (status: string): boolean => {
-  const normalized = normalizeStatus(status);
-  return (
-    normalized === "started" ||
-    normalized === "running" ||
-    normalized === "paused"
-  );
+  return isRunning(status);
 };
 
 export const isBusyStatus = (status: string): boolean => {
