@@ -4,7 +4,7 @@ export interface Vm {
   name: string;
   status: string;
   backend: string;
-  capabilities: Record<string, boolean>;
+  capabilities: Record<string, boolean | string[]>;
   network?: string;
   memoryMiB?: number;
   cpuCores?: number;
@@ -46,6 +46,19 @@ export interface PowerPort {
   getJob(id: string): Promise<Job | null> | Job | null;
 }
 
+export interface VmEdit {
+  name?: string;
+  memoryMiB?: number;
+  cpuCores?: number;
+}
+
+export interface ManagementPort {
+  cloneVm(id: string, name: string): Promise<JobRef>;
+  configureVm(id: string, patch: VmEdit): Promise<JobRef>;
+  deleteVm(id: string, confirmName: string): Promise<JobRef>;
+  getJob(id: string): Promise<Job | null> | Job | null;
+}
+
 /** The sandbox service can be connected after VM power control is live. */
 export interface SandboxPort {
   startVm(id: string): Promise<JobRef>;
@@ -69,4 +82,5 @@ export interface ApiPorts {
   utm: UtmPort;
   sandbox: SandboxPort;
   power?: PowerPort;
+  management?: ManagementPort;
 }
