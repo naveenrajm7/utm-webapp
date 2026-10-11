@@ -99,7 +99,11 @@ const hasOnly = (body: Record<string, unknown>, keys: string[]) => {
 };
 const vmName = (value: unknown): string => {
   if (typeof value !== "string" || !value.trim() || value.length > 100 ||
-      [...value].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) {
+      [...value].some(char => {
+        const code = char.codePointAt(0) ?? 0;
+        return code < 32 || (code >= 127 && code <= 159) ||
+          code === 0x2028 || code === 0x2029;
+      })) {
     throw new ApiError("invalid_input", "VM name must be 1–100 printable characters");
   }
   return value.trim();

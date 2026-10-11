@@ -97,6 +97,7 @@ describe("direct VM API", () => {
     const invalid = [
       () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "" }),
       () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "bad\nname" }),
+      () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "bad\u0085name" }),
       () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "Copy", network: "shared" }),
       () => f.request.patch("/v1/vms/" + ID).send({}),
       () => f.request.patch("/v1/vms/" + ID).send({ network: "offline" }),
@@ -142,7 +143,7 @@ describe("direct VM API", () => {
 
   it("keeps unsupported host or VM capabilities disabled and checks state first", async () => {
     const f = fixture();
-    delete f.host.delete;
+    delete (f.host as Partial<HostCapabilities>).delete;
     expect((await f.request.get("/v1/capabilities").set(auth).expect(200)).body.features.delete).toBe(false);
     expect((await f.request.get("/v1/vms").set(auth).expect(200)).body[0].capabilities.delete).toBe(false);
     expect((await f.request.get("/v1/vms/" + ID).set(auth).expect(200)).body.capabilities.delete).toBe(false);
