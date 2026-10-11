@@ -880,6 +880,80 @@ p {
   font-size: 11px;
 }
 
+.vm-management {
+  margin: -8px 0 20px;
+}
+
+.vm-management-actions,
+.vm-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vm-delete-button {
+  color: var(--red);
+}
+
+.vm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.vm-dialog {
+  width: min(420px, 100%);
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--content);
+  box-shadow: var(--sheet-shadow);
+}
+
+.vm-dialog h2 {
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+
+.vm-dialog > p,
+.vm-dialog form > p {
+  color: var(--secondary);
+  margin-bottom: 14px;
+}
+
+.vm-dialog form {
+  display: grid;
+  gap: 12px;
+}
+
+.vm-dialog label {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.vm-dialog label span {
+  font-weight: 400;
+  color: var(--secondary);
+}
+
+.vm-dialog-actions {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.vm-dialog .vm-form-error {
+  color: var(--error-text);
+  background: var(--error-bg);
+  padding: 8px;
+  border-radius: 6px;
+  margin: 0;
+}
+
 /* VM window (display and serial) */
 
 .vm-window {
