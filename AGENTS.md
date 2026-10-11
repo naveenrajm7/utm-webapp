@@ -25,5 +25,6 @@ API Supertest tests require permission to bind a local socket; an EPERM from a r
 - Start every new lane from current main in a new branch and worktree. The phase 1 adapter, API, and UI branches have already been merged. Do not reuse them for the next wave.
 - The active milestone is local VM control and the web app. Sandbox orchestration, guest execution, MCP, packaging, and remote access are paused.
 - Follow the interface and file ownership in notes/AgentHandoff.md. Coordinate changes to shared types before changing them. The integration owner resolves package-lock.json conflicts.
+- For the next direct VM management wave, use notes/DirectVmManagementContract.md as the agreed HTTP, capability, and UTM mapping contract. The earlier assignments in notes/AgentHandoff.md are historical.
 - Run read-only checks against existing VMs. Start, stop, clone, configure, delete, and console tests require a named disposable test VM or clone. If none is supplied, use fakes and report the live validation gap.
 - Do not expose a capability in the API or UI merely because a method exists in code. Verify that the installed UTM build and VM backend support it.
