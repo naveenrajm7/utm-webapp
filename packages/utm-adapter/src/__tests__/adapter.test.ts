@@ -4,7 +4,15 @@ import { UtmAdapter, UtmError, ProcessRunner, ProcessResult, RunOptions, UtmPort
 const TEMPLATE = "11111111-1111-4111-8111-111111111111";
 const CLONE = "22222222-2222-4222-8222-222222222222";
 
-type FakeVm = { id: string; name: string; status: string; backend: string; networkInterfaces: { mode: string }[] };
+type FakeVm = {
+  id: string; name: string; status: string; backend: string;
+  networkInterfaces: { mode: string }[];
+  serialPorts?: { interface: string }[];
+  vncArguments?: string[];
+  architecture?: string;
+  machine?: string;
+  drives?: unknown[];
+};
 
 class FakeRunner implements ProcessRunner {
   calls: { file: string; args: string[]; options: RunOptions }[] = [];
@@ -12,6 +20,8 @@ class FakeRunner implements ProcessRunner {
   cliAvailable = true;
   inventoryVersion: string | null = "5.0.6";
   fail?: { command: string; stderr: string; exitCode: number };
+  detailOutput?: string;
+  serialOutput?: string;
 
   async run(file: string, args: readonly string[], options: RunOptions): Promise<ProcessResult> {
     const list = [...args];
@@ -21,6 +31,8 @@ class FakeRunner implements ProcessRunner {
     if (command === "version") return { stdout: this.cliAvailable ? "UTM 5.0.6\n" : "", stderr: "", exitCode: this.cliAvailable ? 0 : 134 };
     if (this.fail?.command === command) return { stdout: "", stderr: this.fail.stderr, exitCode: this.fail.exitCode };
     if (jxa && command === "list") return { stdout: JSON.stringify({ version: this.inventoryVersion, vms: this.vms }), stderr: "", exitCode: 0 };
+    if (jxa && command === "detail") return { stdout: this.detailOutput ?? JSON.stringify(this.vm(list[4])), stderr: "", exitCode: 0 };
+    if (jxa && command === "serial") return { stdout: this.serialOutput ?? JSON.stringify({ address: "/dev/ttys001" }), stderr: "", exitCode: 0 };
     if (jxa && command === "configure") {
       const vm = this.vm(list[4]);
       const config = JSON.parse(list[5]);
@@ -42,7 +54,7 @@ class FakeRunner implements ProcessRunner {
   }
 
   private vm(id: string): FakeVm {
-    const vm = this.vms.find(item => item.id === id);
+    const vm = this.vms.find(item => item.id.toLowerCase() === id.toLowerCase());
     if (!vm) throw Error(`Fake VM not found: ${id}`);
     return vm;
   }
@@ -77,8 +89,65 @@ test("inventory normalizes backend, network, and capabilities", async () => {
   expect(vms[1].network).toBe("other");
   expect(vms[1].capabilities.guestExec).toBe(false);
   expect(vms[1].capabilities.stop).toBe(true);
+  expect(vms[0].capabilities).toMatchObject({ clone: false, configure: false, delete: false, guestExec: false });
   fake.inventoryVersion = null;
-  expect((await port.getCapabilities()).utmVersion).toBe("5.0.6");
+  expect(await port.getCapabilities()).toMatchObject({ utmVersion: "5.0.6", clone: false, configure: false, guestExec: false });
+});
+
+test("QEMU detail and configured consoles stay stable while stopped and running", async () => {
+  const fake = new FakeRunner();
+  fake.vms[0] = { ...fake.vms[0], serialPorts: [{ interface: "ptty" }],
+    vncArguments: ["-vnc", "127.0.0.1:2"], architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }] };
+  const port = adapter(fake);
+  const stopped = await port.getVm(TEMPLATE);
+  expect((await port.getVm(TEMPLATE.toUpperCase())).id).toBe(TEMPLATE);
+  expect(stopped).toMatchObject({ architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }],
+    capabilities: { serial: true, display: true } });
+  expect((await port.listVms())[0].capabilities).toMatchObject({ serial: true, display: true });
+  await expect(port.getSerialDevice(TEMPLATE)).rejects.toMatchObject({ code: "conflict" });
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "conflict" });
+  fake.vms[0].status = "started";
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ serial: true, display: true });
+  expect(await port.getSerialDevice(TEMPLATE)).toBe("/dev/ttys001");
+  expect(await port.getVncTarget(TEMPLATE)).toEqual({ host: "127.0.0.1", port: 5902 });
+  expect(fake.calls.filter(call => call.file === "osascript").every(call => call.options.timeoutMs === 30_000)).toBe(true);
+});
+
+test("Apple PTY serial is configured but its display does not imply VNC", async () => {
+  const fake = new FakeRunner();
+  fake.vms[0] = { ...fake.vms[0], backend: "apple", status: "started",
+    serialPorts: [{ interface: "ptty" }], vncArguments: ["-vnc 127.0.0.1:1"] };
+  const port = adapter(fake);
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ serial: true, display: false });
+  expect(await port.getSerialDevice(TEMPLATE)).toBe("/dev/ttys001");
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
+});
+
+test("missing or unsafe consoles are not advertised", async () => {
+  const fake = new FakeRunner();
+  fake.vms[0] = { ...fake.vms[0], status: "started", serialPorts: [{ interface: "tcp" }],
+    vncArguments: ["-vnc", "0.0.0.0:1"] };
+  const port = adapter(fake);
+  expect((await port.getVm(TEMPLATE)).capabilities).toMatchObject({ serial: false, display: false });
+  await expect(port.getSerialDevice(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "unsupported" });
+  fake.vms[0].serialPorts = [{ interface: "ptty" }];
+  fake.serialOutput = JSON.stringify({ address: null });
+  await expect(port.getSerialDevice(TEMPLATE)).rejects.toMatchObject({ code: "unavailable" });
+});
+
+test("malformed UTM detail and console output becomes a typed protocol error", async () => {
+  const fake = new FakeRunner();
+  const port = adapter(fake);
+  fake.detailOutput = "not JSON";
+  await expect(port.getVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "get" });
+  fake.detailOutput = JSON.stringify({ ...fake.vms[0], serialPorts: "bad" });
+  await expect(port.getVm(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "get" });
+  fake.detailOutput = JSON.stringify({ ...fake.vms[0], vncArguments: [42] });
+  await expect(port.getVncTarget(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "vnc" });
+  fake.detailOutput = JSON.stringify({ ...fake.vms[0], status: "started", serialPorts: [{ interface: "ptty" }] });
+  fake.serialOutput = JSON.stringify({ address: 17 });
+  await expect(port.getSerialDevice(TEMPLATE)).rejects.toMatchObject({ code: "protocol_error", operation: "serial" });
 });
 
 test("invalid VM identifiers and guest argv launch no process", async () => {

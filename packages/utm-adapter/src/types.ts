@@ -14,6 +14,10 @@ export interface VmCapabilities {
   /** Agent readiness cannot be determined without executing in the guest. */
   guestAgent: "unknown" | "unavailable";
   networkPresets: NetworkPreset[];
+  /** Configured PTY serial console, independent of power state. */
+  serial: boolean;
+  /** Configured loopback QEMU VNC target, independent of power state. */
+  display: boolean;
 }
 
 export interface Vm {
@@ -25,7 +29,13 @@ export interface Vm {
   network: NetworkPreset | "other";
   memoryMiB?: number;
   cpuCores?: number;
+  architecture?: string;
+  machine?: string;
+  serialPorts?: { interface: string }[];
+  drives?: unknown[];
 }
+
+export interface VncTarget { host: string; port: number }
 
 export interface HostCapabilities {
   utmVersion: string | null;
@@ -58,6 +68,8 @@ export interface UtmPort {
   getCapabilities(): Promise<HostCapabilities>;
   listVms(): Promise<Vm[]>;
   getVm(id: string): Promise<Vm>;
+  getSerialDevice(id: string): Promise<string>;
+  getVncTarget(id: string): Promise<VncTarget>;
   cloneVm(sourceId: string, name: string): Promise<Vm>;
   configureVm(id: string, configuration: VmConfiguration): Promise<Vm>;
   startVm(id: string): Promise<void>;

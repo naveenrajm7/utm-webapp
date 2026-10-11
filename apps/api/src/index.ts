@@ -6,11 +6,12 @@ import { attachWebSocketServer } from "./ws";
 import { UtmAdapter } from "@repo/utm-adapter";
 import { LocalUtmPort } from "./v1/localUtmPort";
 import { VmPowerJobs } from "./v1/vmPowerJobs";
+import { configuredApiHost } from "./webOrigin";
 
 assertApiKeyConfigured();
 
 const port = Number(process.env.PORT || 3001);
-const host = process.env.HOST || "127.0.0.1";
+const host = configuredApiHost();
 const adapter = new UtmAdapter();
 const app = createServer({ utm: new LocalUtmPort(adapter), power: new VmPowerJobs(adapter) });
 const server = http.createServer(app);
