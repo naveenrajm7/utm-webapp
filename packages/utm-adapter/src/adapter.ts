@@ -9,6 +9,15 @@ const CONTROL_TIMEOUT_MS = 120_000;
 const CLONE_TIMEOUT_MS = 10 * 60_000;
 const MAX_OUTPUT_BYTES = 512 * 1024;
 
+// Verified on UTM 5.0.6 with the stopped QEMU VM
+// 10EC4AB2-91F6-42AB-A3DF-0996C75B80CF and disposable clone
+// 127380F6-5685-444C-BBCE-F15251F51F1E on 2026-10-11.
+// Clone and delete used utmctl; configure used JXA and was read back.
+// No Apple backend or JXA clone/delete path has been mutation-tested.
+const MANAGEMENT_EVIDENCE: Record<string, Partial<Record<VmBackend, { clone: boolean; configure: boolean; delete: boolean }>>> = {
+  "5.0.6": { qemu: { clone: true, configure: true, delete: true } }
+};
+
 interface RawVm {
   id: unknown;
   name: unknown;
@@ -41,14 +50,15 @@ function validId(id: string): string {
 }
 
 function validName(name: string): string {
-  const hasControl = typeof name === "string" && [...name].some(char => {
-    const code = char.charCodeAt(0);
-    return code < 32 || code === 127;
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  const hasControl = [...trimmed].some(char => {
+    const code = char.codePointAt(0) ?? 0;
+    return code < 32 || (code >= 127 && code <= 159) || code === 0x2028 || code === 0x2029;
   });
-  if (typeof name !== "string" || !name.trim() || name.length > 100 || hasControl) {
+  if (!trimmed || [...trimmed].length > 100 || hasControl) {
     throw new UtmError("invalid_input", "validate", "VM name must be 1–100 printable characters");
   }
-  return name.trim();
+  return trimmed;
 }
 
 function validArgv(argv: string[]): string[] {
@@ -65,20 +75,17 @@ function validConfig(configuration: VmConfiguration): VmConfiguration {
     throw new UtmError("invalid_input", "configure", "Configuration must be an object");
   }
   const keys = Object.keys(configuration);
-  if (!keys.length || keys.some(key => !["network", "name", "memoryMiB", "cpuCores"].includes(key))) {
+  if (!keys.length || keys.some(key => !["name", "memoryMiB", "cpuCores"].includes(key))) {
     throw new UtmError("invalid_input", "configure", "Unsupported or empty configuration");
   }
-  if (configuration.network !== undefined && !["offline", "shared"].includes(configuration.network)) {
-    throw new UtmError("invalid_input", "configure", "Network must be offline or shared");
-  }
-  if (configuration.name !== undefined) validName(configuration.name);
-  if (configuration.memoryMiB !== undefined && (!Number.isInteger(configuration.memoryMiB) || configuration.memoryMiB < 128 || configuration.memoryMiB > 1_048_576)) {
+  if (keys.includes("name")) validName(configuration.name as string);
+  if (keys.includes("memoryMiB") && (!Number.isInteger(configuration.memoryMiB) || configuration.memoryMiB! < 128 || configuration.memoryMiB! > 1_048_576)) {
     throw new UtmError("invalid_input", "configure", "memoryMiB is out of range");
   }
-  if (configuration.cpuCores !== undefined && (!Number.isInteger(configuration.cpuCores) || configuration.cpuCores < 0 || configuration.cpuCores > 256)) {
+  if (keys.includes("cpuCores") && (!Number.isInteger(configuration.cpuCores) || configuration.cpuCores! < 0 || configuration.cpuCores! > 256)) {
     throw new UtmError("invalid_input", "configure", "cpuCores is out of range");
   }
-  return { ...configuration, ...(configuration.name === undefined ? {} : { name: validName(configuration.name) }) };
+  return { ...configuration, ...(keys.includes("name") ? { name: validName(configuration.name as string) } : {}) };
 }
 
 function parseJson(value: string, operation: string): unknown {
@@ -125,6 +132,7 @@ export class UtmAdapter implements UtmPort {
   private readonly scriptPath: string;
   private cliAvailable?: boolean;
   private cliVersion: string | null = null;
+  private inventoryVersion: string | null = null;
 
   constructor(options: UtmAdapterOptions = {}) {
     this.runner = options.runner ?? new SpawnRunner();
@@ -150,6 +158,13 @@ export class UtmAdapter implements UtmPort {
     return this.cliAvailable;
   }
 
+  private managementEvidence(backend: VmBackend): { clone: boolean; configure: boolean; delete: boolean } {
+    return (this.cliAvailable && this.cliVersion &&
+      (this.inventoryVersion === null || this.inventoryVersion === this.cliVersion) &&
+      MANAGEMENT_EVIDENCE[this.cliVersion]?.[backend]) ||
+      { clone: false, configure: false, delete: false };
+  }
+
   private async jxa(action: string, args: string[] = [], timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string> {
     const result = await this.run(this.osascriptPath, ["-l", "JavaScript", this.scriptPath, action, ...args], timeoutMs);
     if (result.exitCode !== 0) throw failure(action, result);
@@ -168,7 +183,9 @@ export class UtmAdapter implements UtmPort {
   private async inventory(): Promise<{ version: string | null; vms: RawVm[] }> {
     const data = parseJson(await this.jxa("list"), "list") as RawInventory;
     if (!data || !Array.isArray(data.vms)) throw new UtmError("protocol_error", "list", "UTM inventory is malformed");
-    return { version: typeof data.version === "string" ? data.version : null, vms: data.vms as RawVm[] };
+    const version = typeof data.version === "string" ? data.version : null;
+    this.inventoryVersion = version;
+    return { version, vms: data.vms as RawVm[] };
   }
 
   private normalize(raw: RawVm, operation = "list"): Vm {
@@ -189,6 +206,7 @@ export class UtmAdapter implements UtmPort {
     const modes = Array.isArray(raw.networkInterfaces) ? raw.networkInterfaces.map(nic => (nic as { mode: string }).mode) : [];
     const network = modes.length === 0 ? "offline" : modes.length === 1 && modes[0] === "shared" ? "shared" : "other";
     const usable = backend !== "unavailable";
+    const management = status === "stopped" ? this.managementEvidence(backend) : { clone: false, configure: false, delete: false };
     const serialPorts = raw.serialPorts as { interface: string }[] | undefined;
     const display = backend === "qemu" && vncTarget(raw.vncArguments, operation) !== null;
     return {
@@ -200,10 +218,10 @@ export class UtmAdapter implements UtmPort {
       ...(serialPorts ? { serialPorts } : {}),
       ...(Array.isArray(raw.drives) ? { drives: raw.drives } : {}),
       capabilities: {
-        clone: false, configure: false,
+        clone: management.clone, configure: management.configure,
         start: usable && (status === "stopped" || status === "paused"),
         stop: usable && (status === "started" || status === "paused"),
-        delete: false,
+        delete: management.delete,
         guestExec: false,
         guestAgent: backend === "qemu" ? "unknown" : "unavailable",
         networkPresets: [],
@@ -216,16 +234,20 @@ export class UtmAdapter implements UtmPort {
   async getCapabilities(): Promise<HostCapabilities> {
     const cli = await this.cliWorks();
     const inventory = await this.inventory();
-    return { utmVersion: inventory.version ?? this.cliVersion, utmctlAvailable: cli, jxaAvailable: true, clone: false, configure: false, guestExec: false };
+    const management = this.managementEvidence("qemu");
+    return { utmVersion: inventory.version ?? this.cliVersion, utmctlAvailable: cli, jxaAvailable: true,
+      clone: management.clone, configure: management.configure, delete: management.delete, guestExec: false };
   }
 
   async listVms(): Promise<Vm[]> {
+    await this.cliWorks();
     const inventory = await this.inventory();
     return inventory.vms.map(vm => this.normalize(vm));
   }
 
   async getVm(id: string): Promise<Vm> {
     validId(id);
+    await this.cliWorks();
     const raw = parseJson(await this.jxa("detail", [id]), "get") as RawVm;
     const vm = this.normalize(raw, "get");
     if (vm.id.toLowerCase() !== id.toLowerCase()) throw new UtmError("protocol_error", "get", "UTM returned a different VM");
@@ -262,21 +284,36 @@ export class UtmAdapter implements UtmPort {
     const before = await this.listVms();
     const source = before.find(vm => vm.id.toLowerCase() === sourceId.toLowerCase());
     if (!source) throw new UtmError("not_found", "clone", `VM ${sourceId} was not found`);
-    if (source.backend === "unavailable" || source.status !== "stopped") throw new UtmError("conflict", "clone", "Source VM must be stopped and available");
+    if (source.status !== "stopped") throw new UtmError("conflict", "clone", "Source VM must be stopped");
+    if (!source.capabilities.clone) throw new UtmError("unsupported", "clone", "Clone is not validated for this UTM version and VM backend");
     if (before.some(vm => vm.name === name)) throw new UtmError("conflict", "clone", "VM name already exists");
-    await this.command("clone", ["clone", "--name", name, sourceId], [sourceId, name], CLONE_TIMEOUT_MS);
+    let commandError: unknown;
+    try { await this.command("clone", ["clone", sourceId, "--name", name], [sourceId, name], CLONE_TIMEOUT_MS); }
+    catch (error) { commandError = error; }
     const knownIds = new Set(before.map(vm => vm.id.toLowerCase()));
-    const created = (await this.listVms()).filter(vm => vm.name === name && !knownIds.has(vm.id.toLowerCase()));
-    if (created.length !== 1) throw new UtmError("protocol_error", "clone", "Clone completed but its new UUID could not be uniquely identified");
+    let after: Vm[];
+    try { after = await this.listVms(); }
+    catch (error) { throw commandError ?? error; }
+    const created = after.filter(vm => vm.name === name && !knownIds.has(vm.id.toLowerCase()));
+    if (created.length > 1) throw new UtmError("protocol_error", "clone", "Clone outcome is ambiguous: multiple new UUIDs have the requested name");
+    if (created.length === 0) {
+      if (commandError) throw commandError;
+      throw new UtmError("protocol_error", "clone", "Clone command completed but no new UUID appeared in inventory");
+    }
     return created[0];
   }
 
   async configureVm(id: string, configuration: VmConfiguration): Promise<Vm> {
     validId(id); configuration = validConfig(configuration);
     const vm = await this.getVm(id);
-    if (vm.backend === "unavailable" || vm.status !== "stopped") throw new UtmError("conflict", "configure", "VM must be stopped and available");
+    if (vm.status !== "stopped") throw new UtmError("conflict", "configure", "VM must be stopped");
+    if (!vm.capabilities.configure) throw new UtmError("unsupported", "configure", "Configuration is not validated for this UTM version and VM backend");
     await this.jxa("configure", [id, JSON.stringify(configuration)], CONTROL_TIMEOUT_MS);
-    return this.getVm(id);
+    const updated = await this.getVm(id);
+    if (Object.entries(configuration).some(([key, value]) => updated[key as keyof Vm] !== value)) {
+      throw new UtmError("protocol_error", "configure", "UTM did not read back the requested configuration");
+    }
+    return updated;
   }
 
   async startVm(id: string): Promise<void> {
@@ -290,14 +327,25 @@ export class UtmAdapter implements UtmPort {
     validId(id);
     const vm = await this.getVm(id);
     if (!vm.capabilities.stop) throw new UtmError("conflict", "stop", "VM is not running or paused");
-    await this.command("stop", ["stop", "--force", id], [id]);
+    // Both utmctl --force and UTM's JXA default stop terminate the VM immediately.
+    await this.command("stop", ["stop", id, "--force"], [id]);
   }
 
   async deleteVm(id: string): Promise<void> {
     validId(id);
     const vm = await this.getVm(id);
-    if (vm.backend === "unavailable" || vm.status !== "stopped") throw new UtmError("conflict", "delete", "VM must be stopped and available");
-    await this.command("delete", ["delete", id], [id]);
+    if (vm.status !== "stopped") throw new UtmError("conflict", "delete", "VM must be stopped");
+    if (!vm.capabilities.delete) throw new UtmError("unsupported", "delete", "Deletion is not validated for this UTM version and VM backend");
+    let commandError: unknown;
+    try { await this.command("delete", ["delete", id], [id]); }
+    catch (error) { commandError = error; }
+    let after: Vm[];
+    try { after = await this.listVms(); }
+    catch (error) { throw commandError ?? error; }
+    if (after.some(item => item.id.toLowerCase() === id.toLowerCase())) {
+      if (commandError) throw commandError;
+      throw new UtmError("protocol_error", "delete", "Delete command completed but VM remains in inventory");
+    }
   }
 
   async execInGuest(id: string, argv: string[], options: GuestExecOptions = {}): Promise<GuestExecResult> {
