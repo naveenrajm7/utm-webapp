@@ -1,7 +1,7 @@
 import path from "node:path";
 import { UtmError } from "./errors";
 import { ProcessResult, ProcessRunner, RunOptions, SpawnRunner } from "./process";
-import { GuestExecOptions, GuestExecResult, HostCapabilities, UtmPort, Vm, VmBackend, VmConfiguration, VmStatus } from "./types";
+import { GuestExecOptions, GuestExecResult, HostCapabilities, UtmPort, Vm, VmBackend, VmConfiguration, VmStatus, VncTarget } from "./types";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -17,6 +17,11 @@ interface RawVm {
   memoryMiB?: unknown;
   cpuCores?: unknown;
   networkInterfaces?: unknown;
+  serialPorts?: unknown;
+  vncArguments?: unknown;
+  architecture?: unknown;
+  machine?: unknown;
+  drives?: unknown;
 }
 
 interface RawInventory { version?: unknown; vms?: unknown }
@@ -81,12 +86,35 @@ function parseJson(value: string, operation: string): unknown {
   catch (error) { throw new UtmError("protocol_error", operation, "UTM returned invalid JSON", error); }
 }
 
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Only a fixed loopback QEMU VNC argument can become a browser target. */
+function vncTarget(args: unknown, operation: string): VncTarget | null {
+  if (args === undefined) return null;
+  if (!Array.isArray(args) || args.some(arg => typeof arg !== "string")) {
+    throw new UtmError("protocol_error", operation, "UTM returned malformed QEMU arguments");
+  }
+  for (let i = 0; i < args.length; i++) {
+    const value = args[i].trim();
+    const target = value === "-vnc" ? args[i + 1] : value.startsWith("-vnc ") ? value.slice(5).trim() : null;
+    if (target === null) continue;
+    const match = /^(127\.0\.0\.1|localhost|\[::1\]):(\d{1,5})$/.exec(target);
+    if (!match) return null;
+    const port = 5900 + Number(match[2]);
+    return port <= 65535 ? { host: match[1] === "[::1]" ? "::1" : match[1], port } : null;
+  }
+  return null;
+}
+
 function failure(operation: string, result: ProcessResult): UtmError {
   const detail = (result.stderr || result.stdout).trim().slice(0, 512);
+  if (/application (?:isn't running|not found|can't be found)|OSStatus -600/i.test(detail)) return new UtmError("unavailable", operation, detail);
   if (/VM_NOT_FOUND|not found|no such virtual machine/i.test(detail)) return new UtmError("not_found", operation, detail);
   if (/VM_NOT_STOPPED|must be stopped|already running|already exists/i.test(detail)) return new UtmError("conflict", operation, detail);
+  if (/not authorized|not permitted|application (?:isn't running|not found|can't be found)|OSStatus -600/i.test(detail)) return new UtmError("unavailable", operation, detail);
   if (/not supported|guest agent|not available for this backend|\(-2700\)/i.test(detail)) return new UtmError("unsupported", operation, detail);
-  if (/not authorized|not permitted|application isn't running|application not found|OSStatus -600/i.test(detail)) return new UtmError("unavailable", operation, detail);
   return new UtmError("command_failed", operation, detail || `UTM command exited ${result.exitCode}`);
 }
 
@@ -143,27 +171,44 @@ export class UtmAdapter implements UtmPort {
     return { version: typeof data.version === "string" ? data.version : null, vms: data.vms as RawVm[] };
   }
 
-  private normalize(raw: RawVm): Vm {
+  private normalize(raw: RawVm, operation = "list"): Vm {
     if (!raw || typeof raw.id !== "string" || !UUID.test(raw.id) || typeof raw.name !== "string") {
-      throw new UtmError("protocol_error", "list", "UTM returned an invalid VM record");
+      throw new UtmError("protocol_error", operation, "UTM returned an invalid VM record");
+    }
+    if (raw.serialPorts !== undefined && (!Array.isArray(raw.serialPorts) || raw.serialPorts.some(port => !record(port) || typeof port.interface !== "string"))) {
+      throw new UtmError("protocol_error", operation, "UTM returned malformed serial configuration");
+    }
+    if (raw.drives !== undefined && !Array.isArray(raw.drives)) {
+      throw new UtmError("protocol_error", operation, "UTM returned malformed drive configuration");
+    }
+    if (raw.networkInterfaces !== undefined && (!Array.isArray(raw.networkInterfaces) || raw.networkInterfaces.some(nic => !record(nic) || typeof nic.mode !== "string"))) {
+      throw new UtmError("protocol_error", operation, "UTM returned malformed network configuration");
     }
     const backend = (["qemu", "apple", "unavailable"].includes(String(raw.backend)) ? raw.backend : "unavailable") as VmBackend;
     const status = (["stopped", "starting", "started", "pausing", "paused", "resuming", "stopping"].includes(String(raw.status)) ? raw.status : "unknown") as VmStatus;
-    const modes = Array.isArray(raw.networkInterfaces) ? raw.networkInterfaces.map(nic => String((nic as { mode?: unknown }).mode)) : [];
+    const modes = Array.isArray(raw.networkInterfaces) ? raw.networkInterfaces.map(nic => (nic as { mode: string }).mode) : [];
     const network = modes.length === 0 ? "offline" : modes.length === 1 && modes[0] === "shared" ? "shared" : "other";
     const usable = backend !== "unavailable";
+    const serialPorts = raw.serialPorts as { interface: string }[] | undefined;
+    const display = backend === "qemu" && vncTarget(raw.vncArguments, operation) !== null;
     return {
       id: raw.id, name: raw.name, status, backend, network,
       ...(typeof raw.memoryMiB === "number" ? { memoryMiB: raw.memoryMiB } : {}),
       ...(typeof raw.cpuCores === "number" ? { cpuCores: raw.cpuCores } : {}),
+      ...(typeof raw.architecture === "string" ? { architecture: raw.architecture } : {}),
+      ...(typeof raw.machine === "string" ? { machine: raw.machine } : {}),
+      ...(serialPorts ? { serialPorts } : {}),
+      ...(Array.isArray(raw.drives) ? { drives: raw.drives } : {}),
       capabilities: {
-        clone: usable && status === "stopped", configure: usable && status === "stopped",
+        clone: false, configure: false,
         start: usable && (status === "stopped" || status === "paused"),
         stop: usable && (status === "started" || status === "paused"),
-        delete: usable && status === "stopped",
-        guestExec: usable && backend === "qemu" && status === "started",
+        delete: false,
+        guestExec: false,
         guestAgent: backend === "qemu" ? "unknown" : "unavailable",
-        networkPresets: usable ? ["offline", "shared"] : []
+        networkPresets: [],
+        serial: usable && !!serialPorts?.some(port => port.interface === "ptty"),
+        display: usable && display
       }
     };
   }
@@ -171,7 +216,7 @@ export class UtmAdapter implements UtmPort {
   async getCapabilities(): Promise<HostCapabilities> {
     const cli = await this.cliWorks();
     const inventory = await this.inventory();
-    return { utmVersion: inventory.version ?? this.cliVersion, utmctlAvailable: cli, jxaAvailable: true, clone: true, configure: true, guestExec: true };
+    return { utmVersion: inventory.version ?? this.cliVersion, utmctlAvailable: cli, jxaAvailable: true, clone: false, configure: false, guestExec: false };
   }
 
   async listVms(): Promise<Vm[]> {
@@ -181,9 +226,35 @@ export class UtmAdapter implements UtmPort {
 
   async getVm(id: string): Promise<Vm> {
     validId(id);
-    const vm = (await this.listVms()).find(item => item.id.toLowerCase() === id.toLowerCase());
-    if (!vm) throw new UtmError("not_found", "get", `VM ${id} was not found`);
+    const raw = parseJson(await this.jxa("detail", [id]), "get") as RawVm;
+    const vm = this.normalize(raw, "get");
+    if (vm.id.toLowerCase() !== id.toLowerCase()) throw new UtmError("protocol_error", "get", "UTM returned a different VM");
     return vm;
+  }
+
+  async getSerialDevice(id: string): Promise<string> {
+    const vm = await this.getVm(id);
+    if (!vm.capabilities.serial) throw new UtmError("unsupported", "serial", "VM has no PTY serial console");
+    if (vm.status !== "started") throw new UtmError("conflict", "serial", "VM must be started");
+    const result = parseJson(await this.jxa("serial", [id]), "serial");
+    if (!record(result) || (result.address !== null && typeof result.address !== "string")) {
+      throw new UtmError("protocol_error", "serial", "UTM returned a malformed serial target");
+    }
+    if (typeof result.address !== "string" || !/^\/dev\/(?:tty|pty)[A-Za-z0-9._-]+$/.test(result.address)) {
+      throw new UtmError("unavailable", "serial", "Serial device is not connected");
+    }
+    return result.address;
+  }
+
+  async getVncTarget(id: string): Promise<VncTarget> {
+    validId(id);
+    const raw = parseJson(await this.jxa("detail", [id]), "vnc") as RawVm;
+    const vm = this.normalize(raw, "vnc");
+    if (vm.id.toLowerCase() !== id.toLowerCase()) throw new UtmError("protocol_error", "vnc", "UTM returned a different VM");
+    const target = vm.backend === "qemu" ? vncTarget(raw.vncArguments, "vnc") : null;
+    if (!target) throw new UtmError("unsupported", "vnc", "VM has no loopback VNC display");
+    if (vm.status !== "started") throw new UtmError("conflict", "vnc", "VM must be started");
+    return target;
   }
 
   async cloneVm(sourceId: string, name: string): Promise<Vm> {
@@ -191,7 +262,7 @@ export class UtmAdapter implements UtmPort {
     const before = await this.listVms();
     const source = before.find(vm => vm.id.toLowerCase() === sourceId.toLowerCase());
     if (!source) throw new UtmError("not_found", "clone", `VM ${sourceId} was not found`);
-    if (!source.capabilities.clone) throw new UtmError("conflict", "clone", "Source VM must be stopped and available");
+    if (source.backend === "unavailable" || source.status !== "stopped") throw new UtmError("conflict", "clone", "Source VM must be stopped and available");
     if (before.some(vm => vm.name === name)) throw new UtmError("conflict", "clone", "VM name already exists");
     await this.command("clone", ["clone", "--name", name, sourceId], [sourceId, name], CLONE_TIMEOUT_MS);
     const knownIds = new Set(before.map(vm => vm.id.toLowerCase()));
@@ -203,7 +274,7 @@ export class UtmAdapter implements UtmPort {
   async configureVm(id: string, configuration: VmConfiguration): Promise<Vm> {
     validId(id); configuration = validConfig(configuration);
     const vm = await this.getVm(id);
-    if (!vm.capabilities.configure) throw new UtmError("conflict", "configure", "VM must be stopped and available");
+    if (vm.backend === "unavailable" || vm.status !== "stopped") throw new UtmError("conflict", "configure", "VM must be stopped and available");
     await this.jxa("configure", [id, JSON.stringify(configuration)], CONTROL_TIMEOUT_MS);
     return this.getVm(id);
   }
@@ -225,7 +296,7 @@ export class UtmAdapter implements UtmPort {
   async deleteVm(id: string): Promise<void> {
     validId(id);
     const vm = await this.getVm(id);
-    if (!vm.capabilities.delete) throw new UtmError("conflict", "delete", "VM must be stopped and available");
+    if (vm.backend === "unavailable" || vm.status !== "stopped") throw new UtmError("conflict", "delete", "VM must be stopped and available");
     await this.command("delete", ["delete", id], [id]);
   }
 

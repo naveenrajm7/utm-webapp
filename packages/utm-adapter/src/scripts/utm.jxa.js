@@ -7,22 +7,37 @@ function run(argv) {
     if (!vm) throw new Error("VM_NOT_FOUND");
     return vm;
   };
+  const describe = function (vm, detail) {
+    const config = vm.configuration();
+    const result = {
+      id: vm.id(), name: vm.name(), status: vm.status(), backend: vm.backend(),
+      memoryMiB: config.memory, cpuCores: config.cpuCores,
+      networkInterfaces: (config.networkInterfaces || []).map(function (nic) { return { mode: nic.mode }; }),
+      serialPorts: (config.serialPorts || []).map(function (port) { return { interface: port.interface }; }),
+      vncArguments: (config.qemuAdditionalArguments || []).map(function (arg) { return arg.argumentString; })
+    };
+    if (detail) {
+      result.architecture = config.architecture;
+      result.machine = config.machine;
+      result.drives = (config.drives || []).map(function (drive) {
+        return { id: drive.id, interface: drive.interface, guestSize: drive.guestSize, removable: drive.removable };
+      });
+    }
+    return result;
+  };
   if (action === "list") {
     let version = null;
     try { version = utm.UTMVersion(); } catch (_) { /* older UTM */ }
     return JSON.stringify({
       version: version,
-      vms: utm.virtualMachines().map(function (vm) {
-        const config = vm.configuration();
-        return {
-          id: vm.id(), name: vm.name(), status: vm.status(), backend: vm.backend(),
-          memoryMiB: config.memory, cpuCores: config.cpuCores,
-          networkInterfaces: (config.networkInterfaces || []).map(function (nic) {
-            return { mode: nic.mode };
-          })
-        };
-      })
+      vms: utm.virtualMachines().map(function (vm) { return describe(vm, false); })
     });
+  }
+  if (action === "detail") return JSON.stringify(describe(find(argv[1]), true));
+  if (action === "serial") {
+    const ports = find(argv[1]).serialPorts();
+    const port = ports.find(function (item) { return item.interface() === "ptty"; });
+    return JSON.stringify({ address: port ? port.address() : null });
   }
   if (action === "start") {
     utm.start(find(argv[1]));
