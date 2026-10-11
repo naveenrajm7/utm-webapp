@@ -1,0 +1,274 @@
+import { beforeEach, describe, expect, it } from "@jest/globals";
+import supertest from "supertest";
+import type { HostCapabilities, Vm } from "@repo/utm-adapter";
+import { createServer } from "../server";
+import { LocalUtmPort } from "../v1/localUtmPort";
+import { VmPowerJobs } from "../v1/vmPowerJobs";
+
+const KEY = "direct-vm-key";
+const ID = "12345678-1234-1234-1234-123456789abc";
+const OTHER = "12345678-1234-1234-1234-123456789abd";
+const COPY = "12345678-1234-1234-1234-123456789abe";
+const auth = { "x-api-key": KEY };
+const typed = (code: string) => Object.assign(new Error(code), { code });
+
+const vm = (id: string, name: string): Vm => ({
+  id, name, status: "stopped", backend: "qemu", network: "shared",
+  memoryMiB: 4096, cpuCores: 2,
+  capabilities: {
+    clone: true, configure: true, delete: true, start: true, stop: false,
+    guestExec: false, guestAgent: "unknown", networkPresets: [],
+    serial: false, display: false,
+  },
+});
+
+const fixture = () => {
+  const vms = new Map([[ID, vm(ID, "Source")], [OTHER, vm(OTHER, "Other")]]);
+  const host: HostCapabilities & { delete?: boolean } = {
+    utmVersion: "5.0.6", utmctlAvailable: true, jxaAvailable: true,
+    clone: true, configure: true, delete: true, guestExec: false,
+  };
+  const calls: string[] = [];
+  const hooks: {
+    clone?: () => Promise<void>;
+    configure?: () => Promise<void>;
+    delete?: () => Promise<void>;
+  } = {};
+  const adapter = {
+    getCapabilities: async () => host,
+    listVms: async () => [...vms.values()],
+    getVm: async (id: string) => {
+      const value = vms.get(id);
+      if (!value) throw typed("not_found");
+      return value;
+    },
+    cloneVm: async (id: string, name: string) => {
+      calls.push("clone");
+      if (hooks.clone) await hooks.clone();
+      const copy = { ...vms.get(id)!, id: COPY, name };
+      vms.set(COPY, copy);
+      return copy;
+    },
+    configureVm: async (id: string, patch: { name?: string; memoryMiB?: number; cpuCores?: number }) => {
+      calls.push("configure");
+      if (hooks.configure) await hooks.configure();
+      vms.set(id, { ...vms.get(id)!, ...patch });
+      return vms.get(id)!;
+    },
+    deleteVm: async (id: string) => {
+      calls.push("delete");
+      if (hooks.delete) await hooks.delete();
+      vms.delete(id);
+    },
+    startVm: async (id: string) => {
+      calls.push("start");
+      vms.set(id, { ...vms.get(id)!, status: "started",
+        capabilities: { ...vms.get(id)!.capabilities, start: false, stop: true } });
+    },
+    stopVm: async (id: string) => {
+      calls.push("stop");
+      vms.set(id, { ...vms.get(id)!, status: "stopped",
+        capabilities: { ...vms.get(id)!.capabilities, start: true, stop: false } });
+    },
+  };
+  const jobs = new VmPowerJobs(adapter);
+  const utm = new LocalUtmPort(adapter);
+  const request = supertest(createServer({ utm, power: jobs, management: jobs }));
+  return { vms, host, calls, hooks, adapter, jobs, utm, request };
+};
+
+const completed = async (jobs: VmPowerJobs, id: string) => {
+  for (let i = 0; i < 50; i++) {
+    const job = jobs.getJob(id);
+    if (job?.state === "succeeded" || job?.state === "failed") return job;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  throw new Error("job did not finish");
+};
+
+describe("direct VM API", () => {
+  beforeEach(() => { process.env.UTM_API_KEY = KEY; });
+
+  it("validates exact JSON shapes and authenticates before admitting a job", async () => {
+    const f = fixture();
+    await f.request.post("/v1/vms/" + ID + "/clone").send({ name: "Copy" }).expect(401);
+    await f.request.patch("/v1/vms/" + ID).send({ name: "New" }).expect(401);
+    await f.request.delete("/v1/vms/" + ID).send({ confirmName: "Source" }).expect(401);
+    const invalid = [
+      () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "" }),
+      () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "bad\nname" }),
+      () => f.request.post("/v1/vms/" + ID + "/clone").send({ name: "Copy", network: "shared" }),
+      () => f.request.patch("/v1/vms/" + ID).send({}),
+      () => f.request.patch("/v1/vms/" + ID).send({ network: "offline" }),
+      () => f.request.patch("/v1/vms/" + ID).send({ memoryMiB: null }),
+      () => f.request.patch("/v1/vms/" + ID).send({ memoryMiB: 127 }),
+      () => f.request.patch("/v1/vms/" + ID).send({ cpuCores: 1.5 }),
+      () => f.request.patch("/v1/vms/" + ID).send({ name: null }),
+      () => f.request.delete("/v1/vms/" + ID).send({ confirmName: null }),
+      () => f.request.delete("/v1/vms/" + ID).send({ confirmName: "Source", force: true }),
+    ];
+    for (const pending of invalid) {
+      const response = await pending().set(auth).expect(400);
+      expect(response.body.error.code).toBe("invalid_input");
+    }
+    expect(f.calls).toEqual([]);
+  });
+
+  it("returns reconciled clone, edit, and delete job results", async () => {
+    const f = fixture();
+    const capabilities = await f.request.get("/v1/capabilities").set(auth).expect(200);
+    expect(capabilities.body.features.delete).toBe(true);
+    expect((await f.request.get("/v1/vms").set(auth).expect(200)).body[0].capabilities)
+      .toMatchObject({ guestExec: false, networkPresets: [] });
+    expect((await f.request.get("/v1/vms/" + ID).set(auth).expect(200)).body.capabilities)
+      .toMatchObject({ guestExec: false, networkPresets: [] });
+    const clone = await f.request.post("/v1/vms/" + ID + "/clone").set(auth).send({ name: " Copy " }).expect(202);
+    expect((await completed(f.jobs, clone.body.jobId)).result).toEqual({ vmId: COPY });
+    expect((await f.request.get("/v1/jobs/" + clone.body.jobId).set(auth).expect(200)).body)
+      .toMatchObject({ state: "succeeded", result: { vmId: COPY } });
+    const edit = await f.request.patch("/v1/vms/" + COPY).set(auth)
+      .send({ name: "Edited", memoryMiB: 8192, cpuCores: 0 }).expect(202);
+    expect((await completed(f.jobs, edit.body.jobId)).result)
+      .toEqual({ vmId: COPY, status: "stopped" });
+    expect(f.vms.get(COPY)).toMatchObject({ name: "Edited", memoryMiB: 8192, cpuCores: 0 });
+    await f.request.delete("/v1/vms/" + COPY).set(auth)
+      .send({ confirmName: "edited" }).expect(409);
+    const deletion = await f.request.delete("/v1/vms/" + COPY).set(auth)
+      .send({ confirmName: "Edited" }).expect(202);
+    expect((await completed(f.jobs, deletion.body.jobId)).result)
+      .toEqual({ vmId: COPY, deleted: true });
+    expect(f.vms.has(COPY)).toBe(false);
+  });
+
+  it("keeps unsupported host or VM capabilities disabled and checks state first", async () => {
+    const f = fixture();
+    delete f.host.delete;
+    expect((await f.request.get("/v1/capabilities").set(auth).expect(200)).body.features.delete).toBe(false);
+    expect((await f.request.get("/v1/vms").set(auth).expect(200)).body[0].capabilities.delete).toBe(false);
+    expect((await f.request.get("/v1/vms/" + ID).set(auth).expect(200)).body.capabilities.delete).toBe(false);
+    expect((await f.request.delete("/v1/vms/" + ID).set(auth)
+      .send({ confirmName: "Source" }).expect(422)).body.error.code).toBe("unsupported");
+    f.host.clone = false;
+    await f.request.post("/v1/vms/" + ID + "/clone").set(auth).send({ name: "Copy" }).expect(422);
+    f.host.configure = false;
+    await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(422);
+    f.vms.get(ID)!.status = "started";
+    await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(409);
+    f.vms.get(ID)!.status = "stopped";
+    f.host.configure = true;
+    f.vms.get(ID)!.capabilities.configure = false;
+    await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(422);
+    expect(f.calls).toEqual([]);
+  });
+
+  it("returns typed admission errors for existing names, missing VMs, and unavailable UTM", async () => {
+    const f = fixture();
+    expect((await f.request.post("/v1/vms/" + ID + "/clone").set(auth)
+      .send({ name: "Other" }).expect(409)).body.error.code).toBe("conflict");
+    expect((await f.request.patch("/v1/vms/" + COPY).set(auth)
+      .send({ name: "New" }).expect(404)).body.error.code).toBe("not_found");
+    f.adapter.getCapabilities = async () => { throw typed("unavailable"); };
+    expect((await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ name: "New" }).expect(503)).body.error.code).toBe("unavailable");
+    expect(f.calls).toEqual([]);
+  });
+
+  it("shares the VM lock with legacy power and reserves clone names across source VMs", async () => {
+    const f = fixture();
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.hooks.clone = async () => { await gate; };
+    const clone = await f.request.post("/v1/vms/" + ID + "/clone").set(auth)
+      .send({ name: "Reserved" }).expect(202);
+    await f.request.post("/start").query({ uuid: ID }).set(auth).expect(409);
+    await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(409);
+    await f.request.delete("/v1/vms/" + ID).set(auth).send({ confirmName: "Source" }).expect(409);
+    await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth)
+      .send({ name: "Reserved" }).expect(409);
+    release();
+    expect((await completed(f.jobs, clone.body.jobId)).state).toBe("succeeded");
+    await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth)
+      .send({ name: "Reserved" }).expect(409);
+
+    let releasePower = () => {};
+    const powerGate = new Promise<void>(resolve => { releasePower = resolve; });
+    f.adapter.startVm = async () => { await powerGate; };
+    const power = await f.request.post("/start").query({ uuid: OTHER }).set(auth).expect(202);
+    await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth).send({ name: "Free" }).expect(409);
+    releasePower();
+    expect((await completed(f.jobs, power.body.jobId)).state).toBe("succeeded");
+  });
+
+  it("rechecks stopped state and current delete name before mutation", async () => {
+    const f = fixture();
+    let reads = 0;
+    const original = f.adapter.getVm;
+    f.adapter.getVm = async id => {
+      const current = await original(id);
+      reads++;
+      if (reads === 2) current.status = "started";
+      return current;
+    };
+    const edit = await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(202);
+    expect((await completed(f.jobs, edit.body.jobId)).error?.code).toBe("conflict");
+    expect(f.calls).toEqual([]);
+    f.vms.get(ID)!.status = "stopped";
+    reads = 0;
+    f.adapter.getVm = async id => {
+      const current = await original(id);
+      reads++;
+      if (reads === 2) current.name = "Renamed elsewhere";
+      return current;
+    };
+    const deletion = await f.request.delete("/v1/vms/" + ID).set(auth)
+      .send({ confirmName: "Source" }).expect(202);
+    expect((await completed(f.jobs, deletion.body.jobId)).error?.code).toBe("conflict");
+    expect(f.calls).toEqual([]);
+  });
+
+  it("reconciles ambiguous mutations and reports failures without retrying", async () => {
+    const f = fixture();
+    f.hooks.clone = async () => {
+      f.vms.set(COPY, vm(COPY, "Copy"));
+      throw typed("timeout");
+    };
+    const clone = await f.request.post("/v1/vms/" + ID + "/clone").set(auth)
+      .send({ name: "Copy" }).expect(202);
+    expect((await completed(f.jobs, clone.body.jobId)).result).toEqual({ vmId: COPY });
+    f.hooks.configure = async () => { throw typed("timeout"); };
+    const edit = await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ memoryMiB: 8192 }).expect(202);
+    const failed = await completed(f.jobs, edit.body.jobId);
+    expect(failed).toMatchObject({ state: "failed", error: { code: "timeout" } });
+    expect(failed.error?.message).toContain("refresh inventory before retrying");
+    f.hooks.configure = async () => {
+      f.vms.get(ID)!.memoryMiB = 8192;
+      throw typed("timeout");
+    };
+    const reconciled = await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ memoryMiB: 8192 }).expect(202);
+    expect((await completed(f.jobs, reconciled.body.jobId)).state).toBe("succeeded");
+    f.hooks.delete = async () => { throw typed("timeout"); };
+    const deletion = await f.request.delete("/v1/vms/" + COPY).set(auth)
+      .send({ confirmName: "Copy" }).expect(202);
+    expect((await completed(f.jobs, deletion.body.jobId)).error?.code).toBe("timeout");
+    f.hooks.delete = async () => { f.vms.delete(COPY); throw typed("timeout"); };
+    const finalDelete = await f.request.delete("/v1/vms/" + COPY).set(auth)
+      .send({ confirmName: "Copy" }).expect(202);
+    expect((await completed(f.jobs, finalDelete.body.jobId)).result)
+      .toEqual({ vmId: COPY, deleted: true });
+    expect(f.calls.filter(call => call === "clone")).toHaveLength(1);
+  });
+
+  it("forgets old jobs after restart while inventory shows the actual state", async () => {
+    const f = fixture();
+    const edit = await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ name: "Changed" }).expect(202);
+    expect((await completed(f.jobs, edit.body.jobId)).state).toBe("succeeded");
+    const restarted = new VmPowerJobs(f.adapter);
+    const request = supertest(createServer({ utm: f.utm, power: restarted, management: restarted }));
+    expect((await request.get("/v1/jobs/" + edit.body.jobId).set(auth).expect(404)).body.error.code)
+      .toBe("not_found");
+    expect((await request.get("/v1/vms/" + ID).set(auth).expect(200)).body.name).toBe("Changed");
+  });
+});

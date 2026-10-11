@@ -7,13 +7,15 @@ import { attachWebSocketServer } from "./ws";
 
 type LocalAdapter = Pick<AdapterPort,
   "getCapabilities" | "listVms" | "getVm" | "startVm" | "stopVm" |
-  "getSerialDevice" | "getVncTarget">;
+  "cloneVm" | "configureVm" | "deleteVm" | "getSerialDevice" | "getVncTarget">;
 
 /** Use one adapter instance for REST inventory, power jobs, and consoles. */
 export const createLocalRuntime = (adapter: LocalAdapter): http.Server => {
+  const operations = new VmPowerJobs(adapter);
   const app = createServer({
     utm: new LocalUtmPort(adapter),
-    power: new VmPowerJobs(adapter),
+    power: operations,
+    management: operations,
   });
   const server = http.createServer(app);
   attachWebSocketServer(server, adapter);
