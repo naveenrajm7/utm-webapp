@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { IS_DEMO } from "../demo";
+import DemoDisplay from "../demo/DemoDisplay";
 
 interface VNCViewerProps {
   url: string;
@@ -18,7 +20,7 @@ interface RfbConstructor {
 const NO_DISPLAY =
   "This virtual machine has no VNC display. Add a -vnc 127.0.0.1:<n> QEMU argument in UTM, or use the serial console.";
 
-const VNCViewer = ({ url }: VNCViewerProps) => {
+const LiveVNCViewer = ({ url }: VNCViewerProps) => {
   const vncContainerRef = useRef<HTMLDivElement | null>(null);
   const connectedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -84,5 +86,8 @@ const VNCViewer = ({ url }: VNCViewerProps) => {
     </div>
   );
 };
+
+const VNCViewer = ({ url }: VNCViewerProps) =>
+  IS_DEMO ? <DemoDisplay url={url} /> : <LiveVNCViewer url={url} />;
 
 export default VNCViewer;

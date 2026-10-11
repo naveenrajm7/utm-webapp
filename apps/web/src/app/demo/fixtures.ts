@@ -1,0 +1,80 @@
+import type { Template } from "../v1";
+import type { VM } from "../vm";
+
+export const DEMO_VMS: VM[] = [
+  {
+    id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e01",
+    name: "Ubuntu 24.04 Server",
+    status: "started",
+    backend: "qemu",
+    architecture: "aarch64",
+    machine: "virt",
+    memoryMiB: 4096,
+    cpuCores: 4,
+    network: "Shared Network",
+    serialPorts: [{ name: "Built-in Terminal" }],
+    drives: [{ name: "VirtIO 64 GB" }, { name: "USB CD/DVD" }],
+    capabilities: { start: true, stop: true, serial: true, display: true },
+  },
+  {
+    id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e02",
+    name: "Windows 11 ARM",
+    status: "stopped",
+    backend: "qemu",
+    architecture: "aarch64",
+    machine: "virt",
+    memoryMiB: 8192,
+    cpuCores: 6,
+    network: "Shared Network",
+    serialPorts: [],
+    drives: [{ name: "NVMe 128 GB" }],
+    capabilities: { start: true, stop: true, display: true },
+  },
+  {
+    id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e03",
+    name: "macOS Sequoia",
+    status: "stopped",
+    backend: "apple",
+    architecture: "arm64",
+    machine: "Apple Virtual Machine",
+    memoryMiB: 8192,
+    cpuCores: 4,
+    network: "Shared Network",
+    serialPorts: "unavailable",
+    capabilities: { start: true, stop: true },
+  },
+  {
+    id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e04",
+    name: "Debian 12 Template",
+    status: "stopped",
+    backend: "qemu",
+    architecture: "aarch64",
+    machine: "virt",
+    memoryMiB: 2048,
+    cpuCores: 2,
+    network: "Emulated VLAN",
+    serialPorts: [{ name: "Built-in Terminal" }],
+    drives: [{ name: "VirtIO 20 GB" }],
+    capabilities: { start: true, stop: true, serial: true, guestExec: true },
+  },
+  {
+    id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e05",
+    name: "Fedora 40 (x86_64)",
+    status: "paused",
+    backend: "qemu",
+    architecture: "x86_64",
+    machine: "q35",
+    memoryMiB: 4096,
+    cpuCores: 4,
+    network: "Shared Network",
+    serialPorts: [{ name: "Built-in Terminal" }],
+    drives: [{ name: "VirtIO 40 GB" }],
+    capabilities: { start: true, stop: true, serial: true, display: true },
+  },
+];
+
+export const DEMO_TEMPLATES: Template[] = [
+  { id: DEMO_VMS[3].id, name: DEMO_VMS[3].name, backend: "qemu" },
+];
+
+export const DEMO_VM_IDS = DEMO_VMS.map((vm) => vm.id);

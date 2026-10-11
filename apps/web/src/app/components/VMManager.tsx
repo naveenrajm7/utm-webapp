@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { clearApiKey } from "../apiAuth";
+import { IS_DEMO } from "../demo";
 import { useVmList } from "../useVmList";
 import { statusLabel } from "../vm";
 import VMActionControls from "./VMActionControls";
+import { AppIcon } from "./VMIcon";
 import VMInfo from "./VMInfo";
 import VMList from "./VMList";
 import WelcomeScreen from "./WelcomeScreen";
@@ -39,94 +41,116 @@ export default function VMManager() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
+      {sidebarOpen && (
         <button
           type="button"
-          className="icon-button sidebar-toggle"
-          aria-label={
-            sidebarOpen
-              ? "Close virtual machine list"
-              : "Open virtual machine list"
-          }
-          aria-expanded={sidebarOpen}
-          onClick={() => setSidebarOpen((open) => !open)}
-        >
-          <i className={`bi ${sidebarOpen ? "bi-x-lg" : "bi-list"}`} />
-        </button>
-        <button
-          type="button"
-          className="brand-button"
-          onClick={() => select(null)}
-        >
-          UTM Web
-        </button>
-        {selected && (
-          <div className="header-vm">
-            <span className="header-vm-name">{selected.name}</span>
-            <span className="header-vm-status">
-              {statusLabel(selected.status)}
-            </span>
-          </div>
-        )}
-        {selected && (
-          <VMActionControls
-            vm={selected}
-            busy={busyUuid !== null}
-            onAction={runAction}
-          />
-        )}
-        <button
-          type="button"
-          className="icon-button lock-button"
-          onClick={clearApiKey}
-          title="Lock"
-          aria-label="Lock"
-        >
-          <i className="bi bi-lock" />
-        </button>
-      </header>
-
-      {actionError && (
-        <div className="action-error" role="alert">
-          <span>{actionError}</span>
+          className="sidebar-backdrop"
+          aria-label="Close virtual machine list"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
+        <div className="sidebar-titlebar">
           <button
             type="button"
-            onClick={dismissActionError}
-            aria-label="Dismiss"
+            className="brand-button"
+            onClick={() => {
+              select(null);
+              setSidebarOpen(false);
+            }}
           >
-            <i className="bi bi-x-lg" />
+            <AppIcon size={22} />
+            UTM Web
           </button>
         </div>
-      )}
-      {actionJob && (
-        <div className="vm-job-status" role="status">
-          VM {actionJob.action} job · {actionJob.state}
-        </div>
-      )}
+        <VMList
+          vms={vms}
+          loading={loading}
+          error={error}
+          selectedUUID={selectedId}
+          busyUuid={busyUuid}
+          onSelectVM={selectVM}
+          onAction={runAction}
+          onRetry={() => {
+            void refresh();
+          }}
+        />
+      </aside>
 
-      <div className="app-body">
-        {sidebarOpen && (
+      <div className="app-main">
+        <header className="toolbar">
           <button
             type="button"
-            className="sidebar-backdrop"
-            aria-label="Close virtual machine list"
-            onClick={() => setSidebarOpen(false)}
-          />
+            className="icon-button sidebar-toggle"
+            aria-label={
+              sidebarOpen
+                ? "Close virtual machine list"
+                : "Open virtual machine list"
+            }
+            aria-expanded={sidebarOpen}
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            <i className="bi bi-layout-sidebar" />
+          </button>
+          <div className="toolbar-title">
+            <span className="toolbar-title-name">
+              {selected ? selected.name : "UTM Web"}
+            </span>
+            {selected && (
+              <span className="toolbar-title-status">
+                {statusLabel(selected.status)}
+              </span>
+            )}
+          </div>
+          {IS_DEMO && (
+            <span
+              className="demo-badge"
+              title="Virtual machines in this preview are simulated"
+            >
+              Preview
+            </span>
+          )}
+          {selected && (
+            <VMActionControls
+              vm={selected}
+              busy={busyUuid !== null}
+              onAction={runAction}
+            />
+          )}
+          {!IS_DEMO && (
+            <button
+              type="button"
+              className="icon-button lock-button"
+              onClick={clearApiKey}
+              title="Lock"
+              aria-label="Lock"
+            >
+              <i className="bi bi-lock" />
+            </button>
+          )}
+        </header>
+
+        {actionError && (
+          <div className="action-error" role="alert">
+            <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
+            <span>{actionError}</span>
+            <button
+              type="button"
+              onClick={dismissActionError}
+              aria-label="Dismiss"
+            >
+              <i className="bi bi-x-lg" />
+            </button>
+          </div>
         )}
-        <aside className={`sidebar ${sidebarOpen ? "is-open" : ""}`}>
-          <VMList
-            vms={vms}
-            loading={loading}
-            error={error}
-            selectedUUID={selectedId}
-            busyUuid={busyUuid}
-            onSelectVM={selectVM}
-            onAction={runAction}
-            onRetry={() => {
-              void refresh();
-            }}
-          />
-        </aside>
+        {actionJob && (
+          <div className="vm-job-status" role="status">
+            <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
+            {actionJob.action === "start" ? "Starting" : "Stopping"} virtual
+            machine · {actionJob.state}
+          </div>
+        )}
+
         <main className="workspace-main">
           {selected && (
             <VMInfo

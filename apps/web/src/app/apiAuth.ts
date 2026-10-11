@@ -1,4 +1,5 @@
 import { getApiHost, getApiWebSocketHost } from "./config";
+import { IS_DEMO } from "./demo";
 
 const STORAGE_KEY = "utm-api-key";
 export const API_KEY_CHANGED_EVENT = "utm-api-key-changed";
@@ -32,6 +33,11 @@ export const clearApiKey = () => {
 };
 
 export const apiFetch = async (path: string, init?: RequestInit): Promise<Response> => {
+  if (IS_DEMO) {
+    const { demoFetch } = await import("./demo/mockApi");
+    return demoFetch(path, init);
+  }
+
   const headers = new Headers(init?.headers);
   const key = getApiKey();
   if (key) {

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "next build",
+    "build:demo": "NEXT_PUBLIC_DEMO=1 next build",
     "dev": "next dev -p 3000",
     "lint": "eslint . --max-warnings 0",
     "test": "jest --config jest.config.js --runInBand",

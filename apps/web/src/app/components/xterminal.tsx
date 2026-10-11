@@ -5,6 +5,7 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef } from "react";
 import "@xterm/xterm/css/xterm.css";
 import { getAuthenticatedWebSocketUrl } from "../apiAuth";
+import { IS_DEMO } from "../demo";
 
 interface XTerminalProps {
   vmUUID: string;
@@ -40,6 +41,21 @@ function XTerminal({ vmUUID }: XTerminalProps) {
     const frame = window.requestAnimationFrame(fitSoon);
     const observer = new ResizeObserver(fitSoon);
     observer.observe(shell);
+
+    if (IS_DEMO) {
+      let detach: (() => void) | undefined;
+      let disposed = false;
+      void import("../demo/demoShell").then(({ attachDemoShell }) => {
+        if (!disposed) detach = attachDemoShell(term);
+      });
+      return () => {
+        disposed = true;
+        detach?.();
+        window.cancelAnimationFrame(frame);
+        observer.disconnect();
+        term.dispose();
+      };
+    }
 
     const ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
 

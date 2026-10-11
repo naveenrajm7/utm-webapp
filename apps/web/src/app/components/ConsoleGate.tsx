@@ -39,18 +39,18 @@ export default function ConsoleGate({
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  if (loading) return <p role="status">Checking console availability…</p>;
+  if (loading) return <div className="console-gate" role="status"><p>Checking console availability…</p></div>;
   if (error || !vm) return (
-    <div role="alert">
+    <div className="console-gate" role="alert">
       <p>{error || "Virtual machine unavailable."}</p>
-      <button type="button" onClick={() => void refresh()}>Retry</button>
+      <button type="button" className="push-button" onClick={() => void refresh()}>Retry</button>
     </div>
   );
   const availability = consoleAvailability(vm, kind);
   if (!availability.ready) return (
-    <div role="status">
+    <div className="console-gate" role="status">
       <p>{availability.message}</p>
-      <button type="button" onClick={() => void refresh()}>Refresh status</button>
+      <button type="button" className="push-button" onClick={() => void refresh()}>Refresh status</button>
     </div>
   );
   return <>{children}</>;

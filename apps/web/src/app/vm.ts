@@ -116,6 +116,39 @@ export const formatMemory = (mb: number | undefined): string => {
   return `${mb} MB`;
 };
 
+export const backendLabel = (backend: string | undefined): string => {
+  if (backend === "qemu") return "QEMU";
+  if (backend === "apple") return "Apple Virtualization";
+  return backend || "Unknown";
+};
+
+export interface OsBadge {
+  icon: string;
+  tone: "ubuntu" | "windows" | "apple" | "linux" | "android" | "generic";
+}
+
+/** The API reports no guest OS, so the sidebar icon is inferred from the name. */
+export const osBadge = (vm: Pick<VM, "name" | "backend">): OsBadge => {
+  const name = vm.name.toLowerCase();
+  if (name.includes("ubuntu")) return { icon: "bi-ubuntu", tone: "ubuntu" };
+  if (name.includes("windows")) return { icon: "bi-windows", tone: "windows" };
+  if (vm.backend === "apple" || /mac ?os|sequoia|sonoma|ventura/.test(name))
+    return { icon: "bi-apple", tone: "apple" };
+  if (name.includes("android")) return { icon: "bi-android2", tone: "android" };
+  if (/linux|debian|fedora|arch|alpine|kali|centos|rocky|alma|suse|mint/.test(name))
+    return { icon: "bi-terminal-fill", tone: "linux" };
+  return { icon: "bi-pc-display", tone: "generic" };
+};
+
+export const statusTone = (status: string): string => {
+  const normalized = normalizeStatus(status);
+  if (normalized === "started" || normalized === "running") return "is-running";
+  if (normalized === "paused") return "is-paused";
+  if (isBusyStatus(status)) return "is-busy";
+  if (normalized === "stopped") return "is-stopped";
+  return "is-unknown";
+};
+
 export const friendlyListError = (message: string): string => {
   if (/failed to execute script|osascript|utm isn/i.test(message)) {
     return "UTM is not responding. Open UTM on this Mac, then retry.";

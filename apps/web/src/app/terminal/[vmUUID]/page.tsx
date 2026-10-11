@@ -1,27 +1,11 @@
-"use client";
+import { IS_DEMO } from "../../demo";
+import { DEMO_VM_IDS } from "../../demo/fixtures";
+import TerminalPage from "./TerminalPage";
 
-import { useParams } from 'next/navigation';
-import ApiKeyGate from '../../components/ApiKeyGate';
-import XTerminal from '../../components/xterminal';
-import ConsoleGate from '../../components/ConsoleGate';
+export function generateStaticParams() {
+  return IS_DEMO ? DEMO_VM_IDS.map((vmUUID) => ({ vmUUID })) : [];
+}
 
-const TerminalPage: React.FC = () => {
-  const params = useParams<{ vmUUID: string }>();
-  const vmUUID = params?.vmUUID;
-
-  if (!vmUUID) {
-    return <div>No VM specified</div>;
-  }
-
-  return (
-    <ApiKeyGate>
-      <div style={{ width: '100vw', height: '100vh' }}>
-        <ConsoleGate vmId={vmUUID} kind="serial">
-          <XTerminal vmUUID={vmUUID} />
-        </ConsoleGate>
-      </div>
-    </ApiKeyGate>
-  );
-};
-
-export default TerminalPage;
+export default function Page() {
+  return <TerminalPage />;
+}

@@ -1,10 +1,23 @@
 const path = require("path");
 
+const isDemo = process.env.NEXT_PUBLIC_DEMO === "1";
+
+/** @type {import("next").NextConfig} */
 module.exports = {
   reactStrictMode: true,
   transpilePackages: ["@repo/ui"],
-  output: "standalone",
-  experimental: {
-    outputFileTracingRoot: path.join(__dirname, "../../"),
-  },
+  ...(isDemo
+    ? {
+        // GitHub Pages serves static files from /<repository>/.
+        output: "export",
+        basePath: process.env.NEXT_PUBLIC_BASE_PATH || "",
+        trailingSlash: true,
+        images: { unoptimized: true },
+      }
+    : {
+        output: "standalone",
+        experimental: {
+          outputFileTracingRoot: path.join(__dirname, "../../"),
+        },
+      }),
 };

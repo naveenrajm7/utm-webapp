@@ -1,11 +1,17 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import "bootstrap-icons/font/bootstrap-icons.css";
 import "./globals.css";
-import 'bootstrap/dist/css/bootstrap.min.css';
-import 'bootstrap-icons/font/bootstrap-icons.css';
 
 export const metadata: Metadata = {
   title: "UTM Web",
   description: "Control UTM virtual machines on this Mac from a browser.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f6f5f7" },
+    { media: "(prefers-color-scheme: dark)", color: "#2b2b2b" },
+  ],
 };
 
 /**

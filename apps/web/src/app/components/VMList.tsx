@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import {
-  canOpenConsole,
   filterVms,
   hasCapability,
   isBusyStatus,
   isRunning,
   isStopped,
   statusLabel,
+  statusTone,
   type VM,
   type VmAction,
 } from "../vm";
+import VMIcon from "./VMIcon";
 
 interface VMListProps {
   vms: VM[];
@@ -23,15 +24,6 @@ interface VMListProps {
   onAction: (uuid: string, action: VmAction) => void;
   onRetry: () => void;
 }
-
-const statusClass = (status: string): string => {
-  if (canOpenConsole(status) && status.toLowerCase() !== "paused")
-    return "is-running";
-  if (status.toLowerCase() === "paused") return "is-paused";
-  if (isBusyStatus(status)) return "is-busy";
-  if (isStopped(status)) return "is-stopped";
-  return "is-unknown";
-};
 
 const VMList = ({
   vms,
@@ -55,26 +47,29 @@ const VMList = ({
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search name or UUID"
+          placeholder="Search"
           aria-label="Search virtual machines"
         />
-      </div>
-      <div className="vm-list-meta">
-        {loading
-          ? "Loading virtual machines"
-          : `${vms.length} virtual machine${vms.length === 1 ? "" : "s"} · ${runningCount} running`}
       </div>
 
       {error && (
         <div className="vm-list-banner" role="alert">
           <p>{error}</p>
-          <button type="button" onClick={onRetry}>
+          <button type="button" className="push-button" onClick={onRetry}>
             Retry
           </button>
         </div>
       )}
 
       <div className="vm-list-items">
+        <div className="sidebar-section">
+          <span>Virtual Machines</span>
+          {!loading && (
+            <span className="sidebar-section-count">
+              {runningCount > 0 ? `${runningCount} running` : vms.length}
+            </span>
+          )}
+        </div>
         {loading && vms.length === 0 && (
           <p className="vm-list-empty">Loading virtual machines…</p>
         )}
@@ -100,13 +95,14 @@ const VMList = ({
                 onClick={() => onSelectVM(vm.id)}
                 aria-current={selected ? "true" : undefined}
               >
-                <span
-                  className={`status-dot ${statusClass(vm.status)}`}
-                  aria-hidden="true"
-                />
+                <VMIcon vm={vm} />
                 <span className="vm-row-text">
                   <span className="vm-row-name">{vm.name}</span>
                   <span className="vm-row-status">
+                    <span
+                      className={`status-dot ${statusTone(vm.status)}`}
+                      aria-hidden="true"
+                    />
                     {statusLabel(vm.status)}
                   </span>
                 </span>
@@ -114,7 +110,7 @@ const VMList = ({
               {isStopped(vm.status) && hasCapability(vm, "start") && (
                 <button
                   type="button"
-                  className="icon-button"
+                  className="vm-row-run"
                   title={`Start ${vm.name}`}
                   aria-label={`Start ${vm.name}`}
                   disabled={busy}
