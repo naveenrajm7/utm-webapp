@@ -14,7 +14,7 @@ export const DEMO_VMS: VM[] = [
     network: "Shared Network",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 64 GB" }, { name: "USB CD/DVD" }],
-    capabilities: { start: true, stop: true, serial: true, display: true },
+    capabilities: { start: false, stop: true, serial: true, display: true, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e02",
@@ -28,7 +28,7 @@ export const DEMO_VMS: VM[] = [
     network: "Shared Network",
     serialPorts: [],
     drives: [{ name: "NVMe 128 GB" }],
-    capabilities: { start: true, stop: true, display: true },
+    capabilities: { start: true, stop: false, display: true, clone: true, configure: true, delete: true, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e03",
@@ -41,7 +41,7 @@ export const DEMO_VMS: VM[] = [
     cpuCores: 4,
     network: "Shared Network",
     serialPorts: "unavailable",
-    capabilities: { start: true, stop: true },
+    capabilities: { start: true, stop: false, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e04",
@@ -55,7 +55,7 @@ export const DEMO_VMS: VM[] = [
     network: "Emulated VLAN",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 20 GB" }],
-    capabilities: { start: true, stop: true, serial: true, guestExec: true },
+    capabilities: { start: true, stop: false, serial: true, clone: true, configure: true, delete: true, guestExec: false, networkPresets: [] },
   },
   {
     id: "5c0a6c1e-2f43-4c56-9a8e-1d2b3c4d5e05",
@@ -69,7 +69,7 @@ export const DEMO_VMS: VM[] = [
     network: "Shared Network",
     serialPorts: [{ name: "Built-in Terminal" }],
     drives: [{ name: "VirtIO 40 GB" }],
-    capabilities: { start: true, stop: true, serial: true, display: true },
+    capabilities: { start: false, stop: true, serial: true, display: true, clone: false, configure: false, delete: false, guestExec: false, networkPresets: [] },
   },
 ];
 

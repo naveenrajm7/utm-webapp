@@ -25,6 +25,7 @@ export default function VMManager() {
     detailsError,
     refresh,
     runAction,
+    runManagement,
     select,
     dismissActionError,
   } = useVmList();
@@ -146,8 +147,10 @@ export default function VMManager() {
         {actionJob && (
           <div className="vm-job-status" role="status">
             <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
-            {actionJob.action === "start" ? "Starting" : "Stopping"} virtual
-            machine · {actionJob.state}
+            {({
+              start: "Starting", stop: "Force stopping", clone: "Cloning",
+              configure: "Saving settings for", delete: "Deleting",
+            })[actionJob.action]} virtual machine · {actionJob.state}
           </div>
         )}
 
@@ -157,6 +160,7 @@ export default function VMManager() {
               vm={selected}
               busy={busyUuid !== null}
               onAction={runAction}
+              onManagement={runManagement}
               detailsLoading={detailsLoading}
               detailsError={detailsError}
             />
