@@ -10,6 +10,10 @@ import { configuredApiHost } from "../webOrigin";
 
 const TEST_KEY = "test-api-key";
 const VM_ID = "12345678-1234-1234-1234-123456789abc";
+const unusedConsole = {
+  getSerialDevice: async () => { throw new Error("Unexpected serial lookup"); },
+  getVncTarget: async () => { throw new Error("Unexpected VNC lookup"); },
+};
 
 const closed = (ws: WebSocket): Promise<number> => new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error("WebSocket did not close")), 5000);
@@ -118,7 +122,7 @@ describe("server", () => {
 
   it("closes a WebSocket without a token", async () => {
     const server = http.createServer(createServer());
-    attachWebSocketServer(server);
+    attachWebSocketServer(server, unusedConsole);
 
     await new Promise<void>((resolve) => {
       server.listen(0, "127.0.0.1", () => resolve());
@@ -147,7 +151,7 @@ describe("server", () => {
 
   it("rejects unknown WebSocket paths and invalid VM IDs", async () => {
     const server = http.createServer(createServer());
-    attachWebSocketServer(server);
+    attachWebSocketServer(server, unusedConsole);
     await new Promise<void>((resolve) =>
       server.listen(0, "127.0.0.1", resolve),
     );

@@ -18,9 +18,11 @@ Serves `web` on 3000 and `api` on 3001. The serial console and VNC display are
 routes inside `web` (`/terminal/<uuid>` and `/vnc/<uuid>`), both talking to the
 API's WebSocket on 3001. Unlock the UI with the same key.
 
-VM start and stop are `POST /start?uuid=` and `POST /stop?uuid=`. Authenticate
-REST with `Authorization: Bearer <key>` or `X-API-Key`, and WebSockets with
-that header or `?token=`.
+VM start and stop use `POST /v1/vms/<uuid>/start` and
+`POST /v1/vms/<uuid>/stop`; both return a job ID for `GET /v1/jobs/<jobId>`.
+The old `POST /start?uuid=` and `POST /stop?uuid=` routes share the same
+adapter-backed job service. Authenticate REST with `Authorization: Bearer
+<key>` or `X-API-Key`, and WebSockets with that header or `?token=`.
 
 
 
@@ -32,9 +34,9 @@ npm start --workspace=api
 npm start --workspace=web
 ```
 
-`npm start` runs the compiled output, so it needs a build first. The api build
-copies `src/scripts/*.js` into `dist/scripts`, because the JXA scripts are
-resolved relative to the running file and `tsc` only emits TypeScript.
+`npm start` runs the compiled output, so it needs a build first. UTM
+process and JXA operations are packaged with `@repo/utm-adapter`; the API
+build emits TypeScript only.
 
 
 ### To install module for an app

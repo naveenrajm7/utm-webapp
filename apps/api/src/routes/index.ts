@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { isValidUuid } from "../utils/runJxa";
+import { isValidUuid } from "../utils/uuid";
 import type { ApiPorts, PowerPort, UtmPort, Vm } from "../v1/ports";
 
 /** Preserve the old field names while sourcing every value from the v1 VM port. */

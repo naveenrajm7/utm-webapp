@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import supertest from "supertest";
 import { createServer } from "../server";
 import type { ApiPorts, Job, Vm } from "../v1/ports";
-import * as jxa from "../utils/runJxa";
 
 const KEY = "test-api-key";
 const VM_ID = "12345678-1234-1234-1234-123456789abc";
@@ -243,19 +242,15 @@ describe("/v1 API", () => {
     ).toBe("invalid_input");
   });
 
-  it("rejects malicious legacy VM IDs without running a UTM process", async () => {
-    const run = jest.spyOn(jxa, "runJxa");
-    try {
-      const response = await supertest(createServer())
-        .get("/vm_info")
-        .query({ uuid: `${VM_ID};touch /tmp/should-not-exist` })
-        .set("x-api-key", KEY)
-        .expect(400);
-      expect(response.body.status).toBe("error");
-      expect(run).not.toHaveBeenCalled();
-    } finally {
-      run.mockRestore();
-    }
+  it("rejects malicious legacy VM IDs before resolving a VM", async () => {
+    const ports = makePorts();
+    const response = await supertest(createServer(ports))
+      .get("/vm_info")
+      .query({ uuid: `${VM_ID};touch /tmp/should-not-exist` })
+      .set("x-api-key", KEY)
+      .expect(400);
+    expect(response.body.status).toBe("error");
+    expect(ports.utm.getVm).not.toHaveBeenCalled();
   });
 
 });

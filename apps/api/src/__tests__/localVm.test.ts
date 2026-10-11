@@ -16,15 +16,21 @@ const makeVm = (status: "stopped" | "started"): AdapterVm => ({
   network: "shared",
   memoryMiB: 4096,
   cpuCores: 2,
+  architecture: "aarch64",
+  machine: "virt",
+  serialPorts: [{ interface: "ptty" }],
+  drives: [],
   capabilities: {
-    clone: status === "stopped",
-    configure: status === "stopped",
+    clone: false,
+    configure: false,
     start: status === "stopped",
     stop: status === "started",
-    delete: status === "stopped",
-    guestExec: status === "started",
+    delete: false,
+    guestExec: false,
     guestAgent: "unknown",
-    networkPresets: ["offline", "shared"],
+    networkPresets: [],
+    serial: true,
+    display: true,
   },
 });
 
@@ -33,7 +39,7 @@ const makePorts = () => {
   const adapter = {
     getCapabilities: async () => ({
       utmVersion: "5.0.6", utmctlAvailable: true, jxaAvailable: true,
-      clone: true, configure: true, guestExec: true,
+      clone: false, configure: false, guestExec: false,
     }),
     listVms: async () => [makeVm(status)],
     getVm: async (id: string) => {
@@ -43,11 +49,7 @@ const makePorts = () => {
     startVm: async () => { status = "started"; },
     stopVm: async () => { status = "stopped"; },
   };
-  const utm = new LocalUtmPort(
-    adapter,
-    async () => ({ UUID: ID, Architecture: "aarch64", SerialPorts: [{}], Drives: [] }),
-    async () => ({ host: "127.0.0.1", port: 5901 }),
-  );
+  const utm = new LocalUtmPort(adapter);
   const power = new VmPowerJobs(adapter);
   return { utm, power, adapter };
 };
@@ -70,7 +72,7 @@ describe("local UTM web backend", () => {
     const auth = { "x-api-key": KEY };
 
     expect((await request.get("/v1/vms").set(auth).expect(200)).body[0])
-      .toMatchObject({ id: ID, name: "Vagrant test", status: "stopped", capabilities: { start: true, stop: false } });
+      .toMatchObject({ id: ID, name: "Vagrant test", status: "stopped", capabilities: { start: true, stop: false, serial: true, display: true } });
     expect((await request.get("/list_vms").set(auth).expect(200)).body[0])
       .toEqual({ UUID: ID, Name: "Vagrant test", Status: "stopped" });
     expect((await request.get("/v1/capabilities").set(auth).expect(200)).body)

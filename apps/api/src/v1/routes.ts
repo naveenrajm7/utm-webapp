@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { isValidUuid } from "../utils/runJxa";
+import { isValidUuid } from "../utils/uuid";
 import type { ApiPorts, PowerPort, SandboxPort, UtmPort } from "./ports";
 
 type ErrorCode =
