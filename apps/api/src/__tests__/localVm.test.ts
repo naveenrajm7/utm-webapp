@@ -49,7 +49,7 @@ const makePorts = () => {
     async () => ({ host: "127.0.0.1", port: 5901 }),
   );
   const power = new VmPowerJobs(adapter);
-  return { utm, power };
+  return { utm, power, adapter };
 };
 
 const completed = async (power: VmPowerJobs, id: string) => {
@@ -71,20 +71,32 @@ describe("local UTM web backend", () => {
 
     expect((await request.get("/v1/vms").set(auth).expect(200)).body[0])
       .toMatchObject({ id: ID, name: "Vagrant test", status: "stopped", capabilities: { start: true, stop: false } });
+    expect((await request.get("/list_vms").set(auth).expect(200)).body[0])
+      .toEqual({ UUID: ID, Name: "Vagrant test", Status: "stopped" });
     expect((await request.get("/v1/capabilities").set(auth).expect(200)).body)
       .toMatchObject({ utmVersion: "5.0.6", features: { utmctl: true } });
     expect((await request.get(`/v1/vms/${ID}`).set(auth).expect(200)).body)
       .toMatchObject({ architecture: "aarch64", capabilities: { serial: true, display: true } });
+    expect((await request.get("/vm_info").query({ uuid: ID }).set(auth).expect(200)).body)
+      .toMatchObject({ UUID: ID, Name: "Vagrant test", Status: "stopped", Architecture: "aarch64", Memory: 4096 });
+    expect((await request.get("/status_vm").query({ uuid: ID }).set(auth).expect(200)).body)
+      .toEqual({ status: "success", vmStatus: "stopped" });
 
-    const started = await request.post(`/v1/vms/${ID}/start`).set(auth).expect(202);
+    const started = await request.post("/start").query({ uuid: ID }).set(auth).expect(202);
+    expect(started.body).toMatchObject({ status: "success", jobId: expect.any(String) });
     expect((await completed(ports.power, started.body.jobId)).state).toBe("succeeded");
     expect((await request.get(`/v1/jobs/${started.body.jobId}`).set(auth).expect(200)).body.state).toBe("succeeded");
     expect((await request.get("/v1/vms").set(auth).expect(200)).body[0])
       .toMatchObject({ status: "started", capabilities: { start: false, stop: true } });
+    expect((await request.get("/list_vms").set(auth).expect(200)).body[0].Status).toBe("started");
+    expect((await request.get("/status_vm").query({ uuid: ID }).set(auth).expect(200)).body.vmStatus).toBe("started");
     await request.post(`/v1/vms/${ID}/start`).set(auth).expect(409);
+    await request.post("/start").query({ uuid: ID }).set(auth).expect(409);
 
     const stopped = await request.post(`/v1/vms/${ID}/stop`).set(auth).expect(202);
     expect((await completed(ports.power, stopped.body.jobId)).state).toBe("succeeded");
+    expect((await request.get("/list_vms").set(auth).expect(200)).body[0].Status).toBe("stopped");
+    await request.post("/stop").query({ uuid: ID }).set(auth).expect(409);
     await request.get("/v1/jobs/missing").set(auth).expect(404);
     await request.get("/v1/templates").set(auth).expect(503);
   });
@@ -102,5 +114,35 @@ describe("local UTM web backend", () => {
     release();
     const ref = await first;
     expect((await completed(power, ref.jobId)).state).toBe("succeeded");
+  });
+
+  it("rejects conflicting legacy and v1 power requests through the shared job service", async () => {
+    const ports = makePorts();
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    ports.adapter.startVm = async () => { await gate; };
+    const request = supertest(createServer(ports));
+    const auth = { "x-api-key": KEY };
+    const first = await request.post("/start").query({ uuid: ID }).set(auth).expect(202);
+    await request.post(`/v1/vms/${ID}/stop`).set(auth).expect(409);
+    await request.post("/start").query({ uuid: ID }).set(auth).expect(409);
+    release();
+    expect((await completed(ports.power, first.body.jobId)).state).toBe("succeeded");
+  });
+
+  it("returns an unknown job after API restart while actual VM state remains available", async () => {
+    const ports = makePorts();
+    const auth = { "x-api-key": KEY };
+    const first = supertest(createServer(ports));
+    const started = await first.post(`/v1/vms/${ID}/start`).set(auth).expect(202);
+    expect((await completed(ports.power, started.body.jobId)).state).toBe("succeeded");
+
+    const restarted = supertest(createServer({ utm: ports.utm, power: new VmPowerJobs(ports.adapter) }));
+    expect((await restarted.get(`/v1/jobs/${started.body.jobId}`).set(auth).expect(404)).body.error.code)
+      .toBe("not_found");
+    expect((await restarted.get(`/v1/vms/${ID}`).set(auth).expect(200)).body.status)
+      .toBe("started");
+    expect((await restarted.get("/status_vm").query({ uuid: ID }).set(auth).expect(200)).body.vmStatus)
+      .toBe("started");
   });
 });
