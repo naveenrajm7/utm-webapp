@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { isValidUuid } from "../utils/uuid";
-import type { ApiPorts, PowerPort, SandboxPort, UtmPort } from "./ports";
+import type { ApiPorts, ManagementPort, PowerPort, SandboxPort, UtmPort, VmEdit } from "./ports";
 
 type ErrorCode =
   | "invalid_input"
@@ -97,6 +97,37 @@ const hasOnly = (body: Record<string, unknown>, keys: string[]) => {
     throw new ApiError("invalid_input", "Unexpected request field");
   }
 };
+const vmName = (value: unknown): string => {
+  if (typeof value !== "string" || !value.trim() || value.length > 100 ||
+      [...value].some(char => {
+        const code = char.codePointAt(0) ?? 0;
+        return code < 32 || (code >= 127 && code <= 159) ||
+          code === 0x2028 || code === 0x2029;
+      })) {
+    throw new ApiError("invalid_input", "VM name must be 1–100 printable characters");
+  }
+  return value.trim();
+};
+const vmEdit = (body: Record<string, unknown>): VmEdit => {
+  hasOnly(body, ["name", "memoryMiB", "cpuCores"]);
+  if (Object.keys(body).length === 0)
+    throw new ApiError("invalid_input", "A nonempty VM edit is required");
+  const patch: VmEdit = {};
+  if ("name" in body) patch.name = vmName(body.name);
+  if ("memoryMiB" in body) {
+    if (typeof body.memoryMiB !== "number" || !Number.isInteger(body.memoryMiB) ||
+        body.memoryMiB < 128 || body.memoryMiB > 1_048_576)
+      throw new ApiError("invalid_input", "memoryMiB must be an integer from 128 to 1048576");
+    patch.memoryMiB = body.memoryMiB;
+  }
+  if ("cpuCores" in body) {
+    if (typeof body.cpuCores !== "number" || !Number.isInteger(body.cpuCores) ||
+        body.cpuCores < 0 || body.cpuCores > 256)
+      throw new ApiError("invalid_input", "cpuCores must be an integer from 0 to 256");
+    patch.cpuCores = body.cpuCores;
+  }
+  return patch;
+};
 const boundedSeconds = (value: unknown, name: string, max: number): number => {
   if (
     !Number.isInteger(value) ||
@@ -117,6 +148,7 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
   const utm = () => requirePort<UtmPort>(ports.utm);
   const sandbox = () => requirePort<SandboxPort>(ports.sandbox);
   const power = () => requirePort<PowerPort>(ports.power ?? ports.sandbox);
+  const management = () => requirePort<ManagementPort>(ports.management);
 
   router.get(
     "/capabilities",
@@ -147,6 +179,34 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
       const id = vmId(req.params.id);
       hasOnly(objectBody(req.body), []);
       res.status(202).json(await power().stopVm(id));
+    }),
+  );
+  router.post(
+    "/vms/:id/clone",
+    route(async (req, res) => {
+      const id = vmId(req.params.id);
+      const body = objectBody(req.body);
+      hasOnly(body, ["name"]);
+      res.status(202).json(await management().cloneVm(id, vmName(body.name)));
+    }),
+  );
+  router.patch(
+    "/vms/:id",
+    route(async (req, res) => {
+      const id = vmId(req.params.id);
+      const patch = vmEdit(objectBody(req.body));
+      res.status(202).json(await management().configureVm(id, patch));
+    }),
+  );
+  router.delete(
+    "/vms/:id",
+    route(async (req, res) => {
+      const id = vmId(req.params.id);
+      const body = objectBody(req.body);
+      hasOnly(body, ["confirmName"]);
+      if (typeof body.confirmName !== "string" || !body.confirmName)
+        throw new ApiError("invalid_input", "confirmName is required");
+      res.status(202).json(await management().deleteVm(id, body.confirmName));
     }),
   );
   router.get(
@@ -230,7 +290,8 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
     "/jobs/:id",
     route(async (req, res) => {
       const id = opaqueId(req.params.id);
-      const job = (ports.power && await ports.power.getJob(id)) ??
+      const job = (ports.management && await ports.management.getJob(id)) ??
+        (ports.power && await ports.power.getJob(id)) ??
         (ports.sandbox && await ports.sandbox.getJob(id));
       if (!job) throw new ApiError("not_found", "Job not found");
       res.json(job);

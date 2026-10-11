@@ -1,4 +1,4 @@
-import type { UtmPort as AdapterPort, Vm as AdapterVm } from "@repo/utm-adapter";
+import type { UtmPort as AdapterPort, Vm as AdapterVm, HostCapabilities as AdapterHostCapabilities } from "@repo/utm-adapter";
 import type { HostCapabilities, UtmPort, Vm } from "./ports";
 
 /** Maps the UTM adapter's inventory and detail into the browser's v1 shape. */
@@ -14,7 +14,8 @@ export class LocalUtmPort implements UtmPort {
       features: {
         clone: host.clone,
         configure: host.configure,
-        guestExec: host.guestExec,
+        delete: (host as typeof host & { delete?: boolean }).delete === true,
+        guestExec: false,
         utmctl: host.utmctlAvailable,
         jxa: host.jxaAvailable,
       },
@@ -22,14 +23,17 @@ export class LocalUtmPort implements UtmPort {
   }
 
   async listVms(): Promise<Vm[]> {
-    return (await this.adapter.listVms()).map(vm => this.toVm(vm));
+    const [host, vms] = await Promise.all([this.adapter.getCapabilities(), this.adapter.listVms()]);
+    return vms.map(vm => this.toVm(vm, host));
   }
 
   async getVm(id: string): Promise<Vm> {
-    return this.toVm(await this.adapter.getVm(id));
+    const [host, vm] = await Promise.all([this.adapter.getCapabilities(), this.adapter.getVm(id)]);
+    return this.toVm(vm, host);
   }
 
-  private toVm(vm: AdapterVm): Vm {
+  private toVm(vm: AdapterVm, host: AdapterHostCapabilities): Vm {
+    const stopped = vm.status === "stopped" && vm.backend !== "unavailable";
     return {
       id: vm.id,
       name: vm.name,
@@ -43,12 +47,13 @@ export class LocalUtmPort implements UtmPort {
       serialPorts: vm.serialPorts,
       drives: vm.drives,
       capabilities: {
-        clone: vm.capabilities.clone,
-        configure: vm.capabilities.configure,
+        clone: stopped && host.clone && vm.capabilities.clone,
+        configure: stopped && host.configure && vm.capabilities.configure,
         start: vm.capabilities.start,
         stop: vm.capabilities.stop,
-        delete: vm.capabilities.delete,
-        guestExec: vm.capabilities.guestExec,
+        delete: stopped && (host as typeof host & { delete?: boolean }).delete === true && vm.capabilities.delete,
+        guestExec: false,
+        networkPresets: [],
         serial: vm.capabilities.serial,
         display: vm.capabilities.display,
       },
