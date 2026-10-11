@@ -706,9 +706,13 @@ p {
 
 /* VM details */
 
-.vm-detail {
-  width: 100%;
+.vm-detail-pane {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+}
+
+.vm-detail {
   padding: 24px 28px 40px;
 }
 
@@ -894,21 +898,6 @@ p {
   border-bottom: 1px solid var(--separator);
 }
 
-.toolbar-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  border-radius: 6px;
-  padding: 3px 8px 3px 4px;
-  background: transparent;
-  color: var(--accent);
-}
-
-.toolbar-chip:hover {
-  background: var(--hover);
-}
-
 .vm-pane {
   flex: 1;
   min-height: 0;
@@ -936,6 +925,20 @@ p {
 
 .vm-pane-message p {
   max-width: 460px;
+}
+
+.console-gate {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--screen);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
 }
 
 .vnc-shell,

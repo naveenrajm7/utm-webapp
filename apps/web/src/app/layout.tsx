@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "UTM Web",
-  description: "A web UI for UTM, access UTM from anywhere within your browser.",
+  description: "Control UTM virtual machines on this Mac from a browser.",
 };
 
 export const viewport: Viewport = {

@@ -19,27 +19,23 @@ export default function VMManager() {
     busyUuid,
     actionError,
     actionJob,
+    selectedId,
+    selected,
+    detailsLoading,
+    detailsError,
     refresh,
     runAction,
+    select,
     dismissActionError,
   } = useVmList();
-  const [selectedUUID, setSelectedUUID] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const selected = vms.find((vm) => vm.id === selectedUUID) ?? null;
-
-  useEffect(() => {
-    if (selectedUUID && !loading && !vms.some((vm) => vm.id === selectedUUID)) {
-      setSelectedUUID(null);
-    }
-  }, [loading, selectedUUID, vms]);
 
   useEffect(() => {
     document.title = selected ? `${selected.name} · UTM Web` : "UTM Web";
   }, [selected]);
 
   const selectVM = (uuid: string) => {
-    setSelectedUUID(uuid);
+    select(uuid);
     setSidebarOpen(false);
   };
 
@@ -59,7 +55,7 @@ export default function VMManager() {
             type="button"
             className="brand-button"
             onClick={() => {
-              setSelectedUUID(null);
+              select(null);
               setSidebarOpen(false);
             }}
           >
@@ -71,7 +67,7 @@ export default function VMManager() {
           vms={vms}
           loading={loading}
           error={error}
-          selectedUUID={selectedUUID}
+          selectedUUID={selectedId}
           busyUuid={busyUuid}
           onSelectVM={selectVM}
           onAction={runAction}
@@ -161,6 +157,8 @@ export default function VMManager() {
               vm={selected}
               busy={busyUuid !== null}
               onAction={runAction}
+              detailsLoading={detailsLoading}
+              detailsError={detailsError}
             />
           )}
           <div className="home-dashboard" hidden={Boolean(selected)}>

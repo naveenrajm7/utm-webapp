@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { getAuthenticatedWebSocketUrl } from "../apiAuth";
-import { consolePath } from "../demo";
-import { getVm } from "../v1";
 import {
   backendLabel,
   canOpenConsole,
@@ -26,6 +24,8 @@ interface VMInfoProps {
   vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
+  detailsLoading: boolean;
+  detailsError: string | null;
 }
 
 type ConsoleView = "display" | "serial";
@@ -49,81 +49,62 @@ const DetailRow = ({
   </div>
 );
 
-const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
+const VMInfo = ({
+  vm,
+  busy,
+  onAction,
+  detailsLoading,
+  detailsError,
+}: VMInfoProps) => {
   const [view, setView] = useState<View>("details");
-  const [details, setDetails] = useState<VM | null>(null);
-  const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [detailsLoading, setDetailsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setView("details");
-    setDetails(null);
-    setDetailsError(null);
-    setDetailsLoading(true);
-    let cancelled = false;
-    getVm(vm.id)
-      .then((data) => {
-        if (!cancelled) setDetails(data);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled)
-          setDetailsError(
-            error instanceof Error
-              ? error.message
-              : "Could not load virtual machine details",
-          );
-      })
-      .finally(() => {
-        if (!cancelled) setDetailsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [vm.id]);
 
-  const current =
-    details && details.id === vm.id
-      ? { ...vm, ...details, status: vm.status }
-      : vm;
-  const serial =
-    current.serialPorts == null
-      ? {
-          available: hasCapability(current, "serial"),
-          text: hasCapability(current, "serial")
-            ? "Available"
-            : current.backend === "qemu"
-              ? "Not reported"
-              : "Unavailable",
-        }
-      : serialAvailability(current.serialPorts);
+  const serial = hasCapability(vm, "serial")
+    ? {
+        available: true,
+        text:
+          vm.serialPorts == null
+            ? "Configured"
+            : serialAvailability(vm.serialPorts).available
+              ? serialAvailability(vm.serialPorts).text
+              : "Configured",
+      }
+    : { available: false, text: "Unavailable" };
   const consoleReady = canOpenConsole(vm.status);
   const transitioning = busy || isBusyStatus(vm.status);
   const consoles: { id: ConsoleView; label: string; icon: string }[] = [
-    ...(hasCapability(current, "display")
+    ...(hasCapability(vm, "display")
       ? [{ id: "display" as const, label: "Display", icon: "bi-display" }]
       : []),
-    ...(hasCapability(current, "serial")
+    ...(hasCapability(vm, "serial")
       ? [{ id: "serial" as const, label: "Serial", icon: "bi-terminal" }]
       : []),
   ];
-  const primaryConsole = consoles[0]?.id;
-  const activeView: View = consoles.some((item) => item.id === view)
+  const views: { id: View; label: string; icon: string }[] = [
+    { id: "details", label: "Details", icon: "bi-info-circle" },
+    ...consoles,
+  ];
+  const activeView: View = views.some((item) => item.id === view)
     ? view
     : "details";
+  const canRun = isStopped(vm.status) && hasCapability(vm, "start");
 
   const runAndOpen = () => {
     onAction(vm.id, "start");
-    if (primaryConsole) setView(primaryConsole);
+    if (consoles[0]) setView(consoles[0].id);
   };
 
   const renderGate = (kind: ConsoleView) => {
-    if (transitioning && !consoleReady) {
+    if (transitioning) {
       return (
         <div className="vm-pane-message">
           <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
           <p>
-            {statusLabel(vm.status)} {vm.name}…
+            {busy ? "Updating" : statusLabel(vm.status)} {vm.name}…
           </p>
         </div>
       );
@@ -131,13 +112,14 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
     if (!consoleReady) {
       return (
         <div className="vm-pane-message">
-          {hasCapability(current, "start") && isStopped(vm.status) && (
+          {canRun && (
             <button
               type="button"
               className="screen-play"
               disabled={busy}
               onClick={() => onAction(vm.id, "start")}
-              aria-label={`Start ${vm.name}`}
+              aria-label="Start virtual machine"
+              title="Start virtual machine"
             >
               <i className="bi bi-play-fill" aria-hidden="true" />
             </button>
@@ -149,76 +131,13 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
         </div>
       );
     }
-    if (kind === "serial" && !serial.available) {
-      return (
-        <div className="vm-pane-message">
-          <p>{serial.text}</p>
-        </div>
-      );
-    }
     return null;
   };
 
-  if (activeView !== "details") {
-    return (
-      <section className="vm-window" aria-label={`${vm.name} console`}>
-        <div className="vm-window-toolbar">
-          <button
-            type="button"
-            className="toolbar-chip"
-            onClick={() => setView("details")}
-          >
-            <i className="bi bi-chevron-left" aria-hidden="true" />
-            Details
-          </button>
-          {consoles.length > 1 && (
-            <div
-              className="segmented"
-              role="tablist"
-              aria-label="Virtual machine views"
-            >
-              {consoles.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  id={`tab-${item.id}`}
-                  aria-selected={activeView === item.id}
-                  aria-controls={`panel-${item.id}`}
-                  className={activeView === item.id ? "is-selected" : ""}
-                  onClick={() => setView(item.id)}
-                >
-                  <i className={`bi ${item.icon}`} aria-hidden="true" />
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div
-          className="vm-pane"
-          role="tabpanel"
-          id={`panel-${activeView}`}
-          aria-labelledby={`tab-${activeView}`}
-        >
-          {activeView === "display"
-            ? (renderGate("display") ?? (
-                <VNCViewer
-                  url={getAuthenticatedWebSocketUrl("/vnc", { vmUUID: vm.id })}
-                />
-              ))
-            : (renderGate("serial") ?? <XTerminal vmUUID={vm.id} />)}
-        </div>
-      </section>
-    );
-  }
-
-  const canRun = isStopped(vm.status) && hasCapability(current, "start");
-
-  return (
-    <section className="vm-detail" aria-label={vm.name}>
+  const details = (
+    <div className="vm-detail">
       <header className="vm-detail-header">
-        <VMIcon vm={current} size="large" />
+        <VMIcon vm={vm} size="large" />
         <div>
           <h1>{vm.name}</h1>
           <p>
@@ -226,7 +145,7 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
               className={`status-dot ${statusTone(vm.status)}`}
               aria-hidden="true"
             />
-            {statusLabel(vm.status)} · {backendLabel(current.backend)}
+            {statusLabel(vm.status)} · {backendLabel(vm.backend)}
           </p>
         </div>
       </header>
@@ -236,7 +155,7 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
           {transitioning ? (
             <div className="vm-screen-content">
               <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
-              <p>{statusLabel(vm.status)}…</p>
+              <p>{busy ? "Updating" : statusLabel(vm.status)}…</p>
             </div>
           ) : consoleReady && consoles.length > 0 ? (
             <div className="vm-screen-content">
@@ -287,65 +206,35 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
               {statusLabel(vm.status)}
             </DetailRow>
             <DetailRow icon="bi-boxes" label="Backend">
-              {backendLabel(current.backend)}
+              {backendLabel(vm.backend)}
             </DetailRow>
-            {current.architecture && (
+            {vm.architecture && (
               <DetailRow icon="bi-cpu" label="Architecture">
-                {current.architecture}
+                {vm.architecture}
               </DetailRow>
             )}
-            {current.machine && (
+            {vm.machine && (
               <DetailRow icon="bi-motherboard" label="Machine">
-                {current.machine}
+                {vm.machine}
               </DetailRow>
             )}
             <DetailRow icon="bi-memory" label="Memory">
-              {formatMemory(current.memoryMiB)}
+              {formatMemory(vm.memoryMiB)}
             </DetailRow>
             <DetailRow icon="bi-grid-3x3-gap" label="CPU cores">
-              {current.cpuCores ?? "Unknown"}
+              {vm.cpuCores ?? "Unknown"}
             </DetailRow>
-            {current.drives != null && (
+            {vm.drives != null && (
               <DetailRow icon="bi-hdd" label="Drives">
-                {summarizeList(current.drives, "No drives")}
+                {summarizeList(vm.drives, "No drives")}
               </DetailRow>
             )}
             <DetailRow icon="bi-globe" label="Network">
-              {current.network ||
-                summarizeList(current.networkInterfaces, "Unknown")}
+              {vm.network || summarizeList(vm.networkInterfaces, "Unknown")}
             </DetailRow>
             <DetailRow icon="bi-terminal" label="Serial">
               {serial.text}
             </DetailRow>
-            {current.backend === "qemu" &&
-              (!hasCapability(current, "serial") ||
-                !hasCapability(current, "display")) && (
-                <DetailRow icon="bi-plug" label="Consoles">
-                  <span className="console-try-links">
-                    {!hasCapability(current, "serial") && (
-                      <a
-                        className="push-button"
-                        href={consolePath("terminal", vm.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Try serial console
-                      </a>
-                    )}
-                    {!hasCapability(current, "display") && (
-                      <a
-                        className="push-button"
-                        href={consolePath("vnc", vm.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Try VNC display
-                      </a>
-                    )}
-                    <span>Availability has not been confirmed for this VM.</span>
-                  </span>
-                </DetailRow>
-              )}
             <DetailRow icon="bi-fingerprint" label="UUID">
               <span className="vm-uuid">
                 <code>{vm.id}</code>
@@ -368,6 +257,52 @@ const VMInfo = ({ vm, busy, onAction }: VMInfoProps) => {
             </DetailRow>
           </dl>
         </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <section className="vm-window" aria-label={vm.name}>
+      {consoles.length > 0 && (
+        <div className="vm-window-toolbar">
+          <div
+            className="segmented"
+            role="tablist"
+            aria-label="Virtual machine views"
+          >
+            {views.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                id={`tab-${item.id}`}
+                aria-selected={activeView === item.id}
+                aria-controls={`panel-${item.id}`}
+                className={activeView === item.id ? "is-selected" : ""}
+                onClick={() => setView(item.id)}
+              >
+                <i className={`bi ${item.icon}`} aria-hidden="true" />
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div
+        className={activeView === "details" ? "vm-detail-pane" : "vm-pane"}
+        role="tabpanel"
+        id={`panel-${activeView}`}
+        aria-labelledby={`tab-${activeView}`}
+      >
+        {activeView === "details"
+          ? details
+          : activeView === "display"
+            ? (renderGate("display") ?? (
+                <VNCViewer
+                  url={getAuthenticatedWebSocketUrl("/vnc", { vmUUID: vm.id })}
+                />
+              ))
+            : (renderGate("serial") ?? <XTerminal vmUUID={vm.id} />)}
       </div>
     </section>
   );

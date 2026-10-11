@@ -3,6 +3,7 @@
 import { useParams } from 'next/navigation';
 import ApiKeyGate from '../../components/ApiKeyGate';
 import XTerminal from '../../components/xterminal';
+import ConsoleGate from '../../components/ConsoleGate';
 
 const TerminalPage: React.FC = () => {
   const params = useParams<{ vmUUID: string }>();
@@ -15,7 +16,9 @@ const TerminalPage: React.FC = () => {
   return (
     <ApiKeyGate>
       <div style={{ width: '100vw', height: '100vh' }}>
-        <XTerminal vmUUID={vmUUID} />
+        <ConsoleGate vmId={vmUUID} kind="serial">
+          <XTerminal vmUUID={vmUUID} />
+        </ConsoleGate>
       </div>
     </ApiKeyGate>
   );

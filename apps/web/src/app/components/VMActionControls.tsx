@@ -40,7 +40,7 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
           className="icon-button"
           title="Open serial console in a new tab"
           aria-label="Open serial console in a new tab"
-          disabled={!consoleReady}
+          disabled={!consoleReady || transitioning}
           onClick={() => openPopout(consolePath("terminal", vm.id))}
         >
           <i className="bi bi-terminal" />
@@ -52,7 +52,7 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
           className="icon-button"
           title="Open display in a new tab"
           aria-label="Open display in a new tab"
-          disabled={!consoleReady}
+          disabled={!consoleReady || transitioning}
           onClick={() => openPopout(consolePath("vnc", vm.id))}
         >
           <i className="bi bi-display" />

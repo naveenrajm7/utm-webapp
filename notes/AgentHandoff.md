@@ -1,79 +1,62 @@
-# Local control plane agent handoff
+# Local VM control and web handoff
 
-## Goal and starting point
+## Decision and current state (2026-10-10)
 
-Build one Mac-hosted backend that controls UTM and serves both the existing web UI and an MCP adapter. This milestone runs locally on one Mac. It should prove a managed sandbox flow using a disposable UTM template: create a clone, boot it, execute in the guest, inspect the result, and destroy only the clone.
+Focus on a working local UTM Web flow: one UTM adapter, one REST/WebSocket backend, and the browser UI. Managed sandboxes, guest execution, MCP, DMG packaging, and remote access are paused. The adapter, API foundation, and web UI branches were merged into main as PRs #6, #9, and #8. Start new work from main, not from those merged branches.
 
-The refreshed `main` branch contains API-key protection, POST start and stop routes, VM listing/details, serial WebSocket bridging, and a QEMU VNC bridge. VM operations are still in Express controllers and JXA scripts. The UI on `main` has clone, delete, and configure placeholders. The old work-in-progress UI changes are preserved at local commit `3a6c82b` on branch `codex/web-ui-wip`; the web agent should start from that branch. No agent worktree should be based on the previously dirty checkout.
-
-This handoff replaces the older, archived September note. `AGENTS.md` describes the verified local build and test baseline.
-
-## Shared contract for parallel work
-
-Keep this contract small and stable while agents work independently. The API agent owns HTTP routing, the UTM adapter owns UTM calls, and the sandbox service owns workflow and metadata. The web and MCP agents consume HTTP only. Use the existing `UTM_API_KEY` for local development; browser account login and public exposure are separate milestones.
-
-| Method and path | Purpose | Response |
+| Layer | Working now | Gap for this milestone |
 | --- | --- | --- |
-| `GET /v1/capabilities` | UTM version and host features | Capability object |
-| `GET /v1/vms` and `GET /v1/vms/:id` | Inventory and per-VM capabilities | VM object or list |
-| `POST /v1/vms/:id/start` and `/stop` | Power operation | `{ "jobId": "..." }` |
-| `GET /v1/templates` | Approved source VMs for sandboxes | Template list |
-| `POST /v1/sandboxes` | Clone an approved template | `{ "sandboxId": "...", "jobId": "..." }` |
-| `GET /v1/sandboxes/:id` | Managed clone status and lease | Sandbox object |
-| `POST /v1/sandboxes/:id/exec` | Run a guest command | `{ "jobId": "..." }` |
-| `DELETE /v1/sandboxes/:id` | Stop and delete a managed clone | `{ "jobId": "..." }` |
-| `GET /v1/jobs/:id` | Poll a long operation | State, result, or structured error |
+| UTM adapter | Injectable port, structured inventory, details by UUID, power calls, typed errors, fake tests | Existing API still has independent JXA paths; read-only live UTM checks passed, mutating and console operations need a disposable VM |
+| API | Authenticated /v1 capabilities, list, details, start/stop jobs, and job polling | Legacy routes and console discovery still bypass the adapter; power jobs are process memory only |
+| Web | /v1 inventory, detail, power controls, error states, VNC and serial components | Detail capabilities can go stale after a power change; list responses do not carry console availability; live console flow is unverified |
+| Deferred | Sandbox and MCP code exists on separate branches; placeholder routes/components remain | No sandbox service or MCP server is wired into the running app |
 
-`POST /v1/sandboxes` accepts `{ "templateId": "...", "network": "offline" | "shared", "ttlSeconds": number }`. The service must reject an unapproved template. `offline` means no guest NIC; `shared` means UTM's shared/NAT network. `exec` accepts `{ "argv": string[], "timeoutSeconds"?: number }`; its completed job result contains `stdout`, `stderr`, and `exitCode`. Job states are `queued`, `running`, `succeeded`, and `failed`. Return a typed `unsupported` error for a VM without guest execution support.
+Build, lint, and tests passed on main at review: 9 adapter tests, 19 API tests, 3 web tests. Read-only UTM 5.0.6 inventory and one stopped QEMU VM detail response worked. No disposable running VM was available for a live console or power check. These observations establish read-only connectivity, not proof of mutating operations.
 
-VM objects use a stable `id` (UTM UUID), `name`, `status`, `backend`, and explicit capability flags. A conditional snapshot endpoint can be added after the adapter proves it for the installed UTM and VM backend. Do not expose snapshot tools for unsupported VMs. Existing unversioned routes can remain during migration.
+## Contract for the next parallel wave
 
-## Independent agent assignments
+Keep the current authenticated /v1 endpoints stable: GET /capabilities, GET /vms, GET /vms/:id, POST /vms/:id/start, POST /vms/:id/stop, and GET /jobs/:id. Start and stop return HTTP 202 with a jobId. Jobs report queued, running, succeeded, or failed with a typed error. The UI must treat a lost job after API restart as unknown and refresh actual VM state.
 
-### UTM adapter — `codex/utm-adapter`
+Each VM in both list and detail responses has the same stable id, name, status, backend, and capability semantics. A serial or display capability means the VM is configured for that console, even while stopped; opening the transport still requires an appropriate running state. A transient failure to obtain a VNC port while stopped must not erase a configured display capability. Show only capabilities actually supported by that VM/backend on the installed UTM build.
 
-Own `packages/utm-adapter/**`. Define an injectable `UtmPort` and implement list, details, clone, configure, start, stop, delete, guest execution, and capability detection. Prefer `utmctl` for supported operations but retain a fixed-script JXA path where needed. Use `execFile` or `spawn` with argument arrays, timeouts, bounded output, and typed errors. Test parsing and errors with fakes. Live validation uses only a named disposable template or its clone. Do not edit `apps/api` or `apps/web`.
+The API owns authentication, HTTP, jobs, and WebSocket bridging. The adapter owns every UTM-specific query or command, including console endpoint discovery. Proposed adapter methods are getSerialDevice(id): Promise<string> and getVncTarget(id): Promise<{ host: string; port: number }>, alongside an enriched getVm(id). The API agent may define an injectable console resolver against this shape while the adapter agent implements it. The integration owner wires the concrete adapter after both branches merge. Keep browser clients dependent on REST/WebSocket only.
 
-**Done:** a test demonstrates clone → start → guest exec → stop → delete through the port with a fake adapter, and a Mac smoke-test report identifies which calls were actually verified with UTM.
+Do not add direct clone/configure/delete UI or REST routes in this wave. The adapter has methods for them, but they have only fake-test coverage and delete has no ownership guard. Sandbox, guest execution, and MCP routes remain unconnected and the sandbox UI stays hidden.
 
-### API foundation — `codex/api-foundation`
+## Three agents to run in parallel
 
-Own `apps/api/**`. First remove shell-string execution for VM details and validate every VM ID; bind the server to loopback by default; constrain WebSocket paths and inputs. Add `/v1` handlers against injected port and sandbox interfaces with fakes in tests. Keep current unversioned routes working for the existing UI during migration. Do not put UTM commands or sandbox workflow in controllers. Do not edit `packages/utm-adapter` or `packages/sandbox-service`.
+### 1. Adapter and capabilities — codex/phase1-adapter
 
-**Done:** an invalid or malicious VM ID returns a client error without launching a process; API tests cover auth, routing, error shapes, and one asynchronous job response.
+Own packages/utm-adapter/**. Move VM detail and console target discovery into the adapter using fixed, bounded JXA/process calls. Extend the Vm type with detail fields and explicit serial/display capabilities whose meaning does not change merely because the VM is stopped. Implement the proposed target methods and preserve the existing power interface. Replace optimistic host capability flags for unverified clone, configure, and guest execution with evidence-based availability. Add fake tests for QEMU, Apple backend, stopped/running states, missing console, and malformed UTM output. Perform read-only Mac checks; use a named disposable VM for live start/stop or console validation only if one is supplied.
 
-### Sandbox service — `codex/sandbox-service`
+Done when adapter build/lint/tests pass, read-only inventory/detail/target behavior is documented, and unsupported capabilities are not advertised. Report every live action that remains unverified.
 
-Own `packages/sandbox-service/**`. Build the managed clone lifecycle against an injected `UtmPort`. Maintain approved templates, ownership metadata, jobs, and TTL leases in SQLite. Support `offline` and `shared` network presets. A destroy request must verify that the VM is a managed clone created by this service. Reconcile unfinished jobs and leases after restart. Test with a fake UTM port. Do not add HTTP routes or MCP tools here.
+### 2. API convergence — codex/phase1-api
 
-**Done:** tests cover successful create/execute/destroy, guest-agent absence, failed clone cleanup, expired lease cleanup, restart reconciliation, and rejection of deletion of an existing personal VM.
+Own apps/api/**. Route legacy VM inventory/details/power through injected adapter-backed services so there is one VM control path. Keep legacy URLs as compatibility shims while the web uses /v1. Introduce an injectable console resolver for WebSocket bridging; retain a working legacy-backed default until integration swaps in the adapter methods. Keep UUID validation, local loopback binding, API-key auth, and typed /v1 errors. Restrict CORS to the configured local web origin and verify WebSocket origin/path/input handling. Add tests for identical legacy and /v1 VM state, unavailable console targets, power conflicts, and a job lost on restart.
 
-### MCP adapter — `codex/mcp`
+Done when API build/lint/tests pass independently, no legacy controller invokes its own UTM command, and the remaining console adapter wiring is clearly isolated for integration.
 
-Own `apps/mcp/**`. Build a stdio MCP server that calls the `/v1` API using a configured local URL and API credential. Expose list VMs, list templates, create sandbox, run command, get job, and destroy sandbox. Return structured job and capability errors. It must contain no direct UTM or Apple scripting code. Test it with a fake HTTP server.
+### 3. Web end-to-end VM flow — codex/phase1-web
 
-**Done:** a local MCP client can complete the sandbox flow through the API once integration lands; all tool calls are covered by fake-server tests.
+Own apps/web/**. Keep the existing layout. Remove sandbox claims from visible copy while its backend is paused. Refresh selected VM details/capabilities after power transitions and when inventory status changes; make header buttons and tabs use the same current VM data. Show configured display/serial affordances when stopped but gate opening until running. Handle job polling failures by refreshing VM state and showing a recoverable message. Add meaningful UI tests with a fake /v1 API for stopped -> running -> console-ready, API restart during a job, and unsupported consoles.
 
-### Web UI — `codex/web-ui-wip`
+Done when web build/lint/tests pass and the UI does not promise a console or sandbox it cannot open.
 
-Own `apps/web/**`. Start from the preserved UI branch, not from a fresh `main` checkout. Keep the existing responsive layout, polling, error states, VNC viewer, and serial console changes. Change data access to the `/v1` contract, show capability-based actions, and add a template-to-sandbox flow. Avoid claiming that every UTM VM has a browser display. Do not edit API or core packages.
+## Integration gate and following wave
 
-**Done:** the web build passes; with a mocked API, users can list VMs, start/stop, create a sandbox from an approved template, see job status, and destroy the sandbox.
+After those three branches land, an integration owner wires the API console resolver and detail mapping to the adapter, removes redundant JXA code, resolves package-lock.json if needed, and runs the full builds/tests. With a named disposable VM, verify browser list -> detail -> start -> job completion -> supported console -> stop on the Mac. Do not run mutating tests against personal VMs. If no disposable VM is available, record the live-flow gate as open.
 
-## Prepared worktrees and merge procedure
+Only after that gate, plan direct VM management as the next wave: validate adapter clone/configure/delete on a disposable clone, expose typed asynchronous /v1 operations with explicit destructive confirmation, then add matching web controls. VM creation and snapshots require separate capability research and validation. Sandbox and MCP remain paused until guest execution reliability and VM ownership rules are proven.
 
-The following local worktrees are ready. Open the corresponding directory for each agent; do not run `git worktree add` again in this checkout. Run `npm ci` inside a worktree before building or testing because dependencies are not copied from the primary checkout.
+## Prepared worktrees and PR handoff
 
-| Agent | Branch | Worktree |
+These worktrees already exist at the same local main baseline. Do not create them again. The old agent worktrees remain attached to already merged branches.
+
+| Lane | Branch | Worktree |
 | --- | --- | --- |
-| UTM adapter | `codex/utm-adapter` | `../utm-webapp-utm-adapter` |
-| API foundation | `codex/api-foundation` | `../utm-webapp-api-foundation` |
-| Sandbox service | `codex/sandbox-service` | `../utm-webapp-sandbox-service` |
-| MCP adapter | `codex/mcp` | `../utm-webapp-mcp` |
-| Web UI | `codex/web-ui-wip` | `../utm-webapp-web-ui` |
+| Adapter | codex/phase1-adapter | ../utm-webapp-phase1-adapter |
+| API | codex/phase1-api | ../utm-webapp-phase1-api |
+| Web | codex/phase1-web | ../utm-webapp-phase1-web |
 
-These branches and handoff commits are local and have not been pushed. Agents working on another Mac need the branches published or otherwise transferred before they can use these worktrees.
-
-Each agent commits only its owned files and records tests run and Mac-only checks still needed. Merge the adapter and API foundation first, then the sandbox service, MCP adapter, and web UI. The integration owner resolves `package-lock.json` once, wires the packages into the API, checks the legacy UI migration, and runs the full disposable-VM flow on the Mac. Do not run destructive checks against personal VMs.
-
-This milestone ends when the browser and MCP client both use the same API and an approved template can be cloned, executed in, and destroyed locally. Packaging and remote access are outside this milestone.
+Open each target worktree as that agent's writable workspace. Run npm ci there. Each agent commits only its owned paths, pushes its branch, and opens a PR targeting main. The PR description must list code changes, exact build/lint/test commands and results, Mac/UTM checks performed, and every check that could not be run with its reason and concrete follow-up steps for another agent. Leave cross-lane package-lock.json conflict resolution to integration. A named disposable VM is required before any live mutating or console check.

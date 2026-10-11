@@ -33,7 +33,7 @@ export default function WelcomeScreen() {
         <p>
           {IS_DEMO
             ? "This preview runs entirely in your browser with simulated virtual machines. Pick one from the sidebar to try it."
-            : "Select a virtual machine on this Mac to see its details and open its consoles."}
+            : "Select a machine to see its details, available consoles, and power controls."}
         </p>
       </div>
       <div className="welcome-links">
