@@ -143,6 +143,43 @@ describe("VM flow with a fake /v1 API", () => {
     )).not.toContain("Connected");
   });
 
+  it("keeps confirmed console controls visible while stop details reload", async () => {
+    let actual = running;
+    let state: "queued" | "succeeded" = "queued";
+    let releaseDetails: () => void = () => {};
+    let holdDetails: Promise<void> | null = null;
+    const store = new VmStore({
+      listVms: async () => [actual],
+      getVm: async () => { if (holdDetails) await holdDetails; return actual; },
+      powerVm: async () => ({ jobId: "stop-1" }),
+      getJob: async () => ({ id: "stop-1", state }),
+    });
+    await store.refresh();
+    store.select(ID);
+    await store.refreshSelected();
+    await store.runAction(ID, "stop");
+
+    holdDetails = new Promise<void>(resolve => { releaseDetails = resolve; });
+    actual = stopped;
+    state = "succeeded";
+    const finishing = store.pollJob();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const duringRefresh = store.getSnapshot().selected!;
+    expect(duringRefresh.status).toBe("stopped");
+    expect(duringRefresh.capabilities).toMatchObject({ serial: true, display: true, start: true, stop: false });
+    const tabs = renderToStaticMarkup(
+      <VMInfo vm={duringRefresh} busy={true} onAction={() => {}}
+        detailsLoading={true} detailsError={null} />,
+    );
+    expect(tabs).toContain(">Display</button>");
+    expect(tabs).toContain(">Serial</button>");
+
+    releaseDetails();
+    await finishing;
+    expect(store.getSnapshot().selected?.capabilities).toMatchObject({ serial: true, display: true });
+    expect(store.getSnapshot().busyUuid).toBeNull();
+  });
+
   it("recovers actual VM state when an API restart loses a power job", async () => {
     const store = new VmStore();
     await store.refresh();

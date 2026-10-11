@@ -43,11 +43,23 @@ export class VmStore {
   };
   private listed = () =>
     this.state.vms.find((vm) => vm.id === this.state.selectedId) ?? null;
-  private current = (listed: VM): VM =>
-    this.detail?.vm.id === listed.id &&
-    this.detail.inventoryStatus === listed.status
-      ? { ...listed, ...this.detail.vm }
-      : listed;
+  private current = (listed: VM): VM => {
+    const detail = this.detail?.vm;
+    if (!detail || detail.id !== listed.id) return listed;
+    return {
+      ...listed,
+      ...detail,
+      status: listed.status,
+      capabilities: {
+        ...detail.capabilities,
+        ...listed.capabilities,
+        // Inventory has no console configuration yet. Retain the last confirmed
+        // flags until the detail request for the new power state completes.
+        serial: hasCapability(detail, "serial"),
+        display: hasCapability(detail, "display"),
+      },
+    };
+  };
 
   select = (id: string | null) => {
     if (this.state.selectedId === id) return;
@@ -99,7 +111,7 @@ export class VmStore {
     if (!listed) return;
     const request = ++this.detailRequest;
     if (!this.detail || this.detail.inventoryStatus !== listed.status) {
-      this.publish({ detailsLoading: true, detailsError: null, selected: listed });
+      this.publish({ detailsLoading: true, detailsError: null, selected: this.current(listed) });
     }
     try {
       const vm = await this.client.getVm(listed.id);
@@ -168,8 +180,9 @@ export class VmStore {
   };
   private refreshActualState = async () => {
     this.detailRequest++;
-    this.detail = null;
-    this.publish({ selected: this.listed(), detailsLoading: Boolean(this.state.selectedId) });
+    const listed = this.listed();
+    this.publish({ selected: listed ? this.current(listed) : null,
+      detailsLoading: Boolean(this.state.selectedId) });
     await this.refresh();
     if (this.state.selectedId && this.state.error) await this.refreshSelected();
   };
