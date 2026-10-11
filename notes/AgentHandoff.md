@@ -1,7 +1,10 @@
 # Local VM control and web handoff
 
-The Phase 1 assignments below are historical and have merged. For the next
-clone/edit/delete worktree wave, follow [DirectVmManagementContract.md](DirectVmManagementContract.md).
+The Phase 1 assignments below are historical and have merged. The direct
+clone/edit/delete wave also merged; its contract is
+[DirectVmManagementContract.md](DirectVmManagementContract.md). For the current
+local acceptance and job recovery wave, follow
+[JobRecoveryContract.md](JobRecoveryContract.md).
 
 ## Phase 1 integration update (2026-10-10)
 
