@@ -54,7 +54,7 @@ class FakeRunner implements ProcessRunner {
   }
 
   private vm(id: string): FakeVm {
-    const vm = this.vms.find(item => item.id === id);
+    const vm = this.vms.find(item => item.id.toLowerCase() === id.toLowerCase());
     if (!vm) throw Error(`Fake VM not found: ${id}`);
     return vm;
   }
@@ -100,6 +100,7 @@ test("QEMU detail and configured consoles stay stable while stopped and running"
     vncArguments: ["-vnc", "127.0.0.1:2"], architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }] };
   const port = adapter(fake);
   const stopped = await port.getVm(TEMPLATE);
+  expect((await port.getVm(TEMPLATE.toUpperCase())).id).toBe(TEMPLATE);
   expect(stopped).toMatchObject({ architecture: "aarch64", machine: "virt", drives: [{ id: "disk0" }],
     capabilities: { serial: true, display: true } });
   expect((await port.listVms())[0].capabilities).toMatchObject({ serial: true, display: true });

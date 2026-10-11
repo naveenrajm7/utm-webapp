@@ -3,7 +3,7 @@ function run(argv) {
   const action = argv[0];
   const utm = Application("UTM");
   const find = function (id) {
-    const vm = utm.virtualMachines().find(function (candidate) { return candidate.id() === id; });
+    const vm = utm.virtualMachines().find(function (candidate) { return candidate.id().toLowerCase() === id.toLowerCase(); });
     if (!vm) throw new Error("VM_NOT_FOUND");
     return vm;
   };
