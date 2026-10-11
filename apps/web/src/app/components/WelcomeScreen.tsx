@@ -1,5 +1,8 @@
 "use client";
 
+import { IS_DEMO } from "../demo";
+import { AppIcon } from "./VMIcon";
+
 const LINKS = [
   {
     href: "https://mac.getutm.app/gallery/",
@@ -25,11 +28,12 @@ export default function WelcomeScreen() {
   return (
     <div className="welcome">
       <div className="welcome-copy">
-        <p className="welcome-kicker">UTM Web</p>
-        <h1>Virtual machines on this Mac</h1>
+        <AppIcon size={88} />
+        <h1>Welcome to UTM Web</h1>
         <p>
-          Select a machine to see its available consoles and details, or create
-          a managed sandbox from an approved template.
+          {IS_DEMO
+            ? "This preview runs entirely in your browser with simulated virtual machines. Pick one from the sidebar to try it."
+            : "Select a virtual machine on this Mac to see its details and open its consoles."}
         </p>
       </div>
       <div className="welcome-links">

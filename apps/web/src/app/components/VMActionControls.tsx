@@ -9,6 +9,7 @@ import {
   type VM,
   type VmAction,
 } from "../vm";
+import { consolePath } from "../demo";
 
 interface VMActionControlsProps {
   vm: VM;
@@ -40,7 +41,7 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
           title="Open serial console in a new tab"
           aria-label="Open serial console in a new tab"
           disabled={!consoleReady}
-          onClick={() => openPopout(`/terminal/${encodeURIComponent(vm.id)}`)}
+          onClick={() => openPopout(consolePath("terminal", vm.id))}
         >
           <i className="bi bi-terminal" />
         </button>
@@ -52,9 +53,9 @@ const VMActionControls = ({ vm, busy, onAction }: VMActionControlsProps) => {
           title="Open display in a new tab"
           aria-label="Open display in a new tab"
           disabled={!consoleReady}
-          onClick={() => openPopout(`/vnc/${encodeURIComponent(vm.id)}`)}
+          onClick={() => openPopout(consolePath("vnc", vm.id))}
         >
-          <i className="bi bi-box-arrow-up-right" />
+          <i className="bi bi-display" />
         </button>
       )}
       {stopped && hasCapability(vm, "start") ? (

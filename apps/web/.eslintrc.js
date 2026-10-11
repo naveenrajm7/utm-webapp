@@ -6,6 +6,7 @@ module.exports = {
   parserOptions: {
     project: true,
   },
+  ignorePatterns: ["out/"],
   plugins: ["@typescript-eslint"],
   rules: {
     // The base rule flags parameter names in TypeScript types.
