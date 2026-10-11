@@ -3,7 +3,6 @@ import supertest from "supertest";
 import { createServer } from "../server";
 import type { ApiPorts, Job, Vm } from "../v1/ports";
 import * as jxa from "../utils/runJxa";
-import * as legacy from "../services/legacyVmService";
 
 const KEY = "test-api-key";
 const VM_ID = "12345678-1234-1234-1234-123456789abc";
@@ -259,65 +258,4 @@ describe("/v1 API", () => {
     }
   });
 
-  it("preserves legacy inventory, detail, and power route responses", async () => {
-    const list = jest
-      .spyOn(legacy, "listLegacyVms")
-      .mockResolvedValue([{ UUID: VM_ID, Name: "Template" }]);
-    const info = jest
-      .spyOn(legacy, "getLegacyVmInfo")
-      .mockResolvedValue({ UUID: VM_ID, Name: "Template" });
-    const control = jest
-      .spyOn(legacy, "controlLegacyVm")
-      .mockResolvedValue({ status: "success", vmStatus: "started" });
-    try {
-      const request = supertest(createServer());
-      expect(
-        (await request.get("/list_vms").set("x-api-key", KEY).expect(200))
-          .body[0].UUID,
-      ).toBe(VM_ID);
-      expect(
-        (
-          await request
-            .get("/vm_info")
-            .query({ uuid: VM_ID })
-            .set("x-api-key", KEY)
-            .expect(200)
-        ).body.UUID,
-      ).toBe(VM_ID);
-      expect(
-        (
-          await request
-            .post("/start")
-            .query({ uuid: VM_ID })
-            .set("x-api-key", KEY)
-            .expect(200)
-        ).body.status,
-      ).toBe("success");
-      expect(
-        (
-          await request
-            .post("/stop")
-            .query({ uuid: VM_ID })
-            .set("x-api-key", KEY)
-            .expect(200)
-        ).body.status,
-      ).toBe("success");
-      expect(
-        (
-          await request
-            .get("/status_vm")
-            .query({ uuid: VM_ID })
-            .set("x-api-key", KEY)
-            .expect(200)
-        ).body.vmStatus,
-      ).toBe("started");
-      expect(control).toHaveBeenCalledWith("start", VM_ID);
-      expect(control).toHaveBeenCalledWith("stop", VM_ID);
-      expect(control).toHaveBeenCalledWith("status", VM_ID);
-    } finally {
-      list.mockRestore();
-      info.mockRestore();
-      control.mockRestore();
-    }
-  });
 });

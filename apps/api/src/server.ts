@@ -8,16 +8,18 @@ import express, {
 import morgan from "morgan";
 import cors from "cors";
 import { isAuthorizedRequest, requireApiKey } from "./auth";
-import routes from "./routes";
+import { createLegacyRouter } from "./routes";
 import { createV1Router } from "./v1/routes";
 import type { ApiPorts } from "./v1/ports";
+import { configuredWebOrigin } from "./webOrigin";
 
 export const createServer = (ports: Partial<ApiPorts> = {}): Express => {
   const app = express();
+  const webOrigin = configuredWebOrigin();
   app
     .disable("x-powered-by")
     .use(morgan("dev"))
-    .use(cors())
+    .use(cors({ origin: (origin, callback) => callback(null, origin === webOrigin) }))
     .use("/v1", (req, res, next) => {
       if (!isAuthorizedRequest(req)) {
         return res
@@ -46,7 +48,7 @@ export const createServer = (ports: Partial<ApiPorts> = {}): Express => {
     .get("/message/:name", (req, res) => {
       return res.json({ message: `hello ${req.params.name}` });
     })
-    .use(routes);
+    .use(createLegacyRouter(ports));
 
   return app;
 };

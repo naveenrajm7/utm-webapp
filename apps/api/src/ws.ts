@@ -5,26 +5,30 @@ import { spawn } from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { log } from "@repo/logger";
 import { isAuthorizedRequest } from "./auth";
-import { getPtyDevice } from "./utils/getPtyDevice";
-import { getVncTarget } from "./utils/getVncTarget";
+import { legacyConsoleResolver, type ConsoleResolver } from "./services/consoleResolver";
 import { isValidUuid } from "./utils/runJxa";
+import { isAllowedWebSocketOrigin } from "./webOrigin";
 
 /** Serial clients render whatever they receive, so errors are shown as output. */
 const sendSerialNotice = (ws: WebSocket, text: string) => {
   ws.send(JSON.stringify({ type: "data", data: `\r\n${text}\r\n` }));
 };
 
-const attachSerial = async (ws: WebSocket, vmUUID: string) => {
+const attachSerial = async (ws: WebSocket, vmUUID: string, resolver: ConsoleResolver) => {
   let ptyDevice: string;
   try {
-    ptyDevice = await getPtyDevice(vmUUID);
+    ptyDevice = await resolver.getSerialDevice(vmUUID);
   } catch (error) {
     const message = (error as Error).message;
     log(`Could not attach to VM ${vmUUID}: ${message}`);
-    sendSerialNotice(ws, `Cannot attach to serial console: ${message}`);
-    ws.close();
+    if (ws.readyState === WebSocket.OPEN) {
+      sendSerialNotice(ws, `Cannot attach to serial console: ${message}`);
+      ws.close();
+    }
     return;
   }
+
+  if (ws.readyState !== WebSocket.OPEN) return;
 
   log(`PTY device for VM ${vmUUID}: ${ptyDevice}`);
 
@@ -96,16 +100,22 @@ const attachSerial = async (ws: WebSocket, vmUUID: string) => {
  * QEMU serves VNC over plain TCP on the host, but noVNC in the browser can only
  * speak WebSocket, so relay bytes between the two.
  */
-const attachVnc = async (ws: WebSocket, vmUUID: string) => {
+const attachVnc = async (ws: WebSocket, vmUUID: string, resolver: ConsoleResolver) => {
   let target;
   try {
-    target = await getVncTarget(vmUUID);
+    target = await resolver.getVncTarget(vmUUID);
+    if (
+      !["127.0.0.1", "localhost", "::1"].includes(target.host) ||
+      !Number.isInteger(target.port) || target.port < 1 || target.port > 65535
+    ) throw new Error("VNC target must be on loopback");
   } catch (error) {
     const message = (error as Error).message;
     log(`Could not bridge VNC for VM ${vmUUID}: ${message}`);
-    ws.close(1011, message);
+    if (ws.readyState === WebSocket.OPEN) ws.close(1011, "console unavailable");
     return;
   }
+
+  if (ws.readyState !== WebSocket.OPEN) return;
 
   const socket = net.connect(target.port, target.host);
 
@@ -142,6 +152,7 @@ const attachVnc = async (ws: WebSocket, vmUUID: string) => {
 export const handleWebSocketConnection = async (
   ws: WebSocket,
   req: IncomingMessage,
+  resolver: ConsoleResolver = legacyConsoleResolver,
 ) => {
   let url: URL;
   try {
@@ -153,6 +164,11 @@ export const handleWebSocketConnection = async (
 
   if (!isAuthorizedRequest(req, url)) {
     ws.close(1008, "unauthorized");
+    return;
+  }
+
+  if (!isAllowedWebSocketOrigin(req.headers.origin)) {
+    ws.close(1008, "invalid origin");
     return;
   }
 
@@ -175,14 +191,17 @@ export const handleWebSocketConnection = async (
   log(`WebSocket connection established for VM: ${vmUUID} (${url.pathname})`);
 
   if (url.pathname === "/vnc") {
-    await attachVnc(ws, vmUUID);
+    await attachVnc(ws, vmUUID, resolver);
     return;
   }
 
-  await attachSerial(ws, vmUUID);
+  await attachSerial(ws, vmUUID, resolver);
 };
 
-export const attachWebSocketServer = (server: HttpServer): WebSocketServer => {
+export const attachWebSocketServer = (
+  server: HttpServer,
+  resolver: ConsoleResolver = legacyConsoleResolver,
+): WebSocketServer => {
   // noVNC asks for the "binary" subprotocol, so accept it.
   const wss = new WebSocketServer({
     server,
@@ -192,7 +211,7 @@ export const attachWebSocketServer = (server: HttpServer): WebSocketServer => {
   });
 
   wss.on("connection", (ws, req) => {
-    void handleWebSocketConnection(ws, req).catch((error: unknown) => {
+    void handleWebSocketConnection(ws, req, resolver).catch((error: unknown) => {
       log(
         `WebSocket bridge failed: ${error instanceof Error ? error.message : String(error)}`,
       );
