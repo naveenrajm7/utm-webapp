@@ -1,0 +1,163 @@
+import React from "react";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { renderToStaticMarkup } from "react-dom/server";
+import { setApiKey } from "./apiAuth";
+import ConsoleGate, { consoleAvailability } from "./components/ConsoleGate";
+import VMActionControls from "./components/VMActionControls";
+import VMInfo from "./components/VMInfo";
+import { VmStore } from "./vmStore";
+import type { VM } from "./vm";
+
+const ID = "12345678-1234-1234-1234-123456789abc";
+const stopped: VM = {
+  id: ID, name: "Disposable VM", status: "stopped", backend: "qemu",
+  capabilities: { start: true, stop: false, display: true, serial: true },
+  serialPorts: [{ name: "Serial 1" }],
+};
+const running: VM = {
+  ...stopped, status: "running",
+  capabilities: { start: false, stop: true, display: true, serial: true },
+};
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status, headers: { "Content-Type": "application/json" },
+  });
+
+describe("VM flow with a fake /v1 API", () => {
+  let current: VM;
+  let jobState: "queued" | "succeeded";
+  let jobMissing: boolean;
+  let detailCalls: number;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_API_HOST = "http://127.0.0.1:3001";
+    current = stopped;
+    jobState = "queued";
+    jobMissing = false;
+    detailCalls = 0;
+    const values = new Map<string, string>();
+    Object.defineProperty(global, "window", {
+      configurable: true, value: { dispatchEvent: () => true },
+    });
+    Object.defineProperty(global, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => { values.set(key, value); },
+        removeItem: (key: string) => { values.delete(key); },
+      },
+    });
+    setApiKey("test-key");
+    global.fetch = jest.fn(async (input: string, init?: RequestInit) => {
+      const path = new URL(input).pathname;
+      if (path === "/v1/vms") return json([current]);
+      if (path === `/v1/vms/${ID}`) {
+        detailCalls++;
+        return json(current);
+      }
+      if (path === `/v1/vms/${ID}/start` && init?.method === "POST")
+        return json({ jobId: "power-1" }, 202);
+      if (path === "/v1/jobs/power-1")
+        return jobMissing
+          ? json({ error: { code: "not_found", message: "Unknown job" } }, 404)
+          : json({ id: "power-1", state: jobState });
+      return json({ error: { code: "not_found", message: "Unknown route" } }, 404);
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    delete process.env.NEXT_PUBLIC_API_HOST;
+    Reflect.deleteProperty(global, "window");
+    Reflect.deleteProperty(global, "sessionStorage");
+  });
+
+  it("refreshes a selected VM through stopped, running, and console ready states", async () => {
+    const store = new VmStore();
+    await store.refresh();
+    store.select(ID);
+    await store.refreshSelected();
+    expect(store.getSnapshot().selected).toEqual(stopped);
+    expect(consoleAvailability(stopped, "display").ready).toBe(false);
+
+    const stoppedHeader = renderToStaticMarkup(
+      <VMActionControls vm={store.getSnapshot().selected!} busy={false} onAction={() => {}} />,
+    );
+    const stoppedTabs = renderToStaticMarkup(
+      <VMInfo vm={store.getSnapshot().selected!} busy={false} onAction={() => {}}
+        detailsLoading={false} detailsError={null} />,
+    );
+    expect(stoppedHeader).toContain('aria-label="Open display in a new tab" disabled');
+    expect(stoppedHeader).toContain('aria-label="Open serial console in a new tab" disabled');
+    expect(stoppedTabs).toContain(">Display</button>");
+    expect(stoppedTabs).toContain(">Serial</button>");
+
+    await store.runAction(ID, "start");
+    expect(store.getSnapshot().actionJob?.state).toBe("queued");
+    const beforeChange = detailCalls;
+    current = running;
+    await store.refresh();
+    expect(detailCalls).toBeGreaterThan(beforeChange);
+    expect(store.getSnapshot().selected?.status).toBe("running");
+    jobState = "succeeded";
+    await store.pollJob();
+    expect(store.getSnapshot().actionJob).toBeNull();
+    expect(store.getSnapshot().selected?.capabilities).toEqual(running.capabilities);
+    expect(consoleAvailability(store.getSnapshot().selected!, "display").ready).toBe(true);
+
+    const runningHeader = renderToStaticMarkup(
+      <VMActionControls vm={store.getSnapshot().selected!} busy={false} onAction={() => {}} />,
+    );
+    expect(runningHeader).toContain('aria-label="Open display in a new tab"');
+    expect(runningHeader).not.toContain('aria-label="Open display in a new tab" disabled');
+    expect(runningHeader).toContain('aria-label="Stop virtual machine"');
+  });
+
+  it("does not advertise unsupported consoles or mount a direct console route", async () => {
+    current = {
+      ...stopped,
+      capabilities: { start: true, stop: false, display: false, serial: false },
+      serialPorts: [],
+    };
+    const store = new VmStore();
+    await store.refresh();
+    store.select(ID);
+    await store.refreshSelected();
+    const vm = store.getSnapshot().selected!;
+    const header = renderToStaticMarkup(
+      <VMActionControls vm={vm} busy={false} onAction={() => {}} />,
+    );
+    const tabs = renderToStaticMarkup(
+      <VMInfo vm={vm} busy={false} onAction={() => {}}
+        detailsLoading={false} detailsError={null} />,
+    );
+    expect(header).not.toContain("Open display");
+    expect(header).not.toContain("Open serial");
+    expect(tabs).not.toContain(">Display</button>");
+    expect(tabs).not.toContain(">Serial</button>");
+    expect(tabs).not.toContain("Try VNC");
+    expect(consoleAvailability(vm, "display").ready).toBe(false);
+    expect(consoleAvailability(vm, "serial").ready).toBe(false);
+    // A direct route shows its gate until the detail request confirms support.
+    expect(renderToStaticMarkup(
+      <ConsoleGate vmId={ID} kind="display"><span>Connected</span></ConsoleGate>,
+    )).not.toContain("Connected");
+  });
+
+  it("recovers actual VM state when an API restart loses a power job", async () => {
+    const store = new VmStore();
+    await store.refresh();
+    store.select(ID);
+    await store.refreshSelected();
+    await store.runAction(ID, "start");
+    current = running;
+    jobMissing = true;
+    await store.pollJob();
+    expect(store.getSnapshot().actionJob).toBeNull();
+    expect(store.getSnapshot().busyUuid).toBeNull();
+    expect(store.getSnapshot().actionError).toContain("Check its current status");
+    expect(store.getSnapshot().selected?.status).toBe("running");
+    expect(store.getSnapshot().selected?.capabilities).toEqual(running.capabilities);
+    store.dismissActionError();
+    expect(store.getSnapshot().actionError).toBeNull();
+  });
+});

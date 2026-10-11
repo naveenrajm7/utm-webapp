@@ -28,8 +28,8 @@ export default function WelcomeScreen() {
         <p className="welcome-kicker">UTM Web</p>
         <h1>Virtual machines on this Mac</h1>
         <p>
-          Select a machine to see its available consoles and details, or create
-          a managed sandbox from an approved template.
+          Select a machine to see its details, available consoles, and power
+          controls.
         </p>
       </div>
       <div className="welcome-links">
