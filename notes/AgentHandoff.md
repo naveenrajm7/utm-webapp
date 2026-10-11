@@ -1,5 +1,15 @@
 # Local VM control and web handoff
 
+## Phase 1 integration update (2026-10-10)
+
+PRs #10 (adapter), #11 (API), and #12 (web) are merged. The integration branch
+connects `/v1`, legacy REST routes, power jobs, and serial/VNC WebSockets to
+one adapter instance and removes the API's duplicate JXA runtime paths. The
+sections below preserve the original assignment and acceptance plan. Sandbox,
+MCP, clone, configure, delete, and guest execution remain outside the live
+web flow; assess them separately before enabling them.
+
+
 ## Decision and current state (2026-10-10)
 
 Focus on a working local UTM Web flow: one UTM adapter, one REST/WebSocket backend, and the browser UI. Managed sandboxes, guest execution, MCP, DMG packaging, and remote access are paused. The adapter, API foundation, and web UI branches were merged into main as PRs #6, #9, and #8. Start new work from main, not from those merged branches.

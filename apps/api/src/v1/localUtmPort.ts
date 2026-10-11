@@ -1,14 +1,10 @@
 import type { UtmPort as AdapterPort, Vm as AdapterVm } from "@repo/utm-adapter";
-import { getLegacyVmInfo } from "../services/legacyVmService";
-import { getVncTarget } from "../utils/getVncTarget";
 import type { HostCapabilities, UtmPort, Vm } from "./ports";
 
-/** Maps the installed UTM adapter to the browser's v1 VM response. */
+/** Maps the UTM adapter's inventory and detail into the browser's v1 shape. */
 export class LocalUtmPort implements UtmPort {
   constructor(
     private readonly adapter: Pick<AdapterPort, "getCapabilities" | "listVms" | "getVm">,
-    private readonly details = getLegacyVmInfo,
-    private readonly vncTarget = getVncTarget,
   ) {}
 
   async getCapabilities(): Promise<HostCapabilities> {
@@ -30,30 +26,7 @@ export class LocalUtmPort implements UtmPort {
   }
 
   async getVm(id: string): Promise<Vm> {
-    const vm = this.toVm(await this.adapter.getVm(id));
-    try {
-      const details = await this.details(id);
-      if (details.UUID === vm.id && details.status !== "error") {
-        if (typeof details.Architecture === "string") vm.architecture = details.Architecture;
-        if (typeof details.Machine === "string") vm.machine = details.Machine;
-        if (details.SerialPorts !== undefined) {
-          vm.serialPorts = details.SerialPorts;
-          vm.capabilities.serial = Array.isArray(details.SerialPorts) && details.SerialPorts.length > 0;
-        }
-        if (details.Drives !== undefined) vm.drives = details.Drives;
-      }
-    } catch {
-      // Base inventory still works if a VM does not expose legacy detail fields.
-    }
-    if (vm.backend === "qemu") {
-      try {
-        await this.vncTarget(id);
-        vm.capabilities.display = true;
-      } catch {
-        // Only a configured, loopback VNC target is advertised.
-      }
-    }
-    return vm;
+    return this.toVm(await this.adapter.getVm(id));
   }
 
   private toVm(vm: AdapterVm): Vm {
@@ -65,6 +38,10 @@ export class LocalUtmPort implements UtmPort {
       network: vm.network,
       memoryMiB: vm.memoryMiB,
       cpuCores: vm.cpuCores,
+      architecture: vm.architecture,
+      machine: vm.machine,
+      serialPorts: vm.serialPorts,
+      drives: vm.drives,
       capabilities: {
         clone: vm.capabilities.clone,
         configure: vm.capabilities.configure,
@@ -72,8 +49,8 @@ export class LocalUtmPort implements UtmPort {
         stop: vm.capabilities.stop,
         delete: vm.capabilities.delete,
         guestExec: vm.capabilities.guestExec,
-        serial: false,
-        display: false,
+        serial: vm.capabilities.serial,
+        display: vm.capabilities.display,
       },
     };
   }

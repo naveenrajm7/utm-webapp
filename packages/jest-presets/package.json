@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "files": [
-    "node/jest-preset.ts"
+    "node/jest-preset.js"
   ],
   "dependencies": {
     "jest": "^29.7.0",

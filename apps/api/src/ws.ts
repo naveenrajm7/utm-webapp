@@ -5,8 +5,8 @@ import { spawn } from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { log } from "@repo/logger";
 import { isAuthorizedRequest } from "./auth";
-import { legacyConsoleResolver, type ConsoleResolver } from "./services/consoleResolver";
-import { isValidUuid } from "./utils/runJxa";
+import type { ConsoleResolver } from "./services/consoleResolver";
+import { isValidUuid } from "./utils/uuid";
 import { isAllowedWebSocketOrigin } from "./webOrigin";
 
 /** Serial clients render whatever they receive, so errors are shown as output. */
@@ -152,7 +152,7 @@ const attachVnc = async (ws: WebSocket, vmUUID: string, resolver: ConsoleResolve
 export const handleWebSocketConnection = async (
   ws: WebSocket,
   req: IncomingMessage,
-  resolver: ConsoleResolver = legacyConsoleResolver,
+  resolver: ConsoleResolver,
 ) => {
   let url: URL;
   try {
@@ -200,7 +200,7 @@ export const handleWebSocketConnection = async (
 
 export const attachWebSocketServer = (
   server: HttpServer,
-  resolver: ConsoleResolver = legacyConsoleResolver,
+  resolver: ConsoleResolver,
 ): WebSocketServer => {
   // noVNC asks for the "binary" subprotocol, so accept it.
   const wss = new WebSocketServer({

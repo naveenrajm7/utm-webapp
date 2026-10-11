@@ -20,9 +20,9 @@ stop, and job status. Older unversioned routes remain for compatibility.
 `GET /status` is the only unauthenticated route (liveness). The API binds to
 `127.0.0.1:3001` by default, so remote browser access is a later milestone.
 
-The current implementation status and parallel agent assignments are in
+The local VM flow and integration history are in
 [`notes/AgentHandoff.md`](notes/AgentHandoff.md). Sandbox and MCP integration
-are paused while local VM control and the web UI are completed.
+remain paused.
 
 
 ## What's inside?
@@ -36,6 +36,8 @@ This Turborepo includes the following:
 - `api`: an [Express](https://expressjs.com/) server - providing APIs to control UTM.
 
 The `api` runs on port 3001 and must run on the Mac hosting UTM. It uses
-`packages/utm-adapter` for `/v1` VM inventory and power control; some legacy
-routes and console discovery still call JXA directly and are being unified.
+`packages/utm-adapter` for `/v1` and legacy VM inventory, details, and power
+control, as well as serial and VNC endpoint discovery. The API owns REST,
+jobs, authentication, and WebSocket bridging; UTM-specific calls stay in the
+adapter. Start and stop require a VM that supports those actions.
 
