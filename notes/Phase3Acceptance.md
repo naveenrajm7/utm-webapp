@@ -102,3 +102,43 @@ After **all three jobs were terminal**, the API and web dev processes were stopp
 4. **Web recovery lane — pending-job reload behavior remains unverified live.** The current browser flow passed without a reload during a running job. The merged `VmStore` tracks pending jobs in memory, so the recovery contract's `sessionStorage` metadata, bounded transient retry, and `unknown` handling still need the web lane's implementation and fake tests. After the API and web recovery PRs merge, repeat a disposable-clone browser action with a same-tab reload while its job is pending; confirm the same job ID resumes polling and no second mutation is submitted. Do not crash the API during a live UTM command.
 
 Checks not performed: running-job API crash simulation, live `unknown` outcome, same-tab reload while a mutation was pending, and power/console checks. The first two would require disrupting a live UTM operation and were intentionally skipped; the reload behavior belongs to the recovery implementation and should be covered with fakes before a controlled disposable-clone retest. Power and console were outside this direct-management acceptance scope. After the API and web PRs merge, rerun `npm ci`, `npm run build`, `npm run lint`, `npm test`, then repeat this local browser/API flow on a fresh clone of the same confirmed stopped QEMU source, editing and deleting only that new clone.
+
+## Post-integration verification — 2026-10-13
+
+The sections above are the historical acceptance of baseline `fa4918d`. PR
+#21 (API journal and operation safety) and PR #20 (browser recovery) have now
+merged. Their combined branch passed `npm run build`, `npm run lint`, and
+`npm run test` before merge: logger 1, adapter 22, API 42, and web 22 tests
+(87 total). The tests ran after the dependency build completed.
+
+The real API on UTM 5.0.6 cloned the same confirmed stopped QEMU source to
+disposable VM `FCFCCFD8-0A23-4A29-87A6-CAE2589F7EA8`. A lower-case UUID
+power request during its clone job and a case-variant clone name both returned
+409. The completed clone job remained `succeeded` after a clean API restart
+with the same temporary journal. A rename to the source name in different
+casing returned 409. Name/RAM/CPU edits on the clone read back correctly;
+the edit job remained available after another restart. Exact-name deletion
+removed the clone, and all three terminal job IDs remained available after a
+third clean restart. The source was not edited or powered on.
+
+The combined browser and API run used a second disposable clone,
+`1DE7858B-9823-44BB-85F6-AF7395DF6A24`. The browser saved only
+`{jobId, vmId, action}` for a clone job, then the same tab was reloaded while
+job `343a47af-b5ba-417b-a9e3-51201e67e3e3` was `running`. It resumed
+polling that ID, showed the new clone, and cleared the pending record after
+success. Chrome recorded exactly one clone POST across the reload. Browser
+settings changed the clone to 3584 MiB and 1 CPU with UTM readback, and the
+exact-name delete flow removed it and cleared its pending record.
+
+To check `unknown` safely, the API was stopped only after all live UTM jobs
+completed. A synthetic queued job was added to the temporary journal. On
+restart the API returned `unknown` with `outcome_unknown`; a browser reload
+showed the outcome-check message and retained its pending ID. No live UTM
+command was interrupted or replayed. Transient transport/5xx retries and
+absent-job 404 handling remain covered by fake-backed tests; a live
+interruption during a UTM mutation was not performed.
+
+Both disposable clones were deleted. The source remained stopped under its
+original name with 4096 MiB RAM and CPU 0. The baseline findings about the
+`127.0.0.1:3000` browser origin and the deleted-VM 404 message are outside
+PRs #20/#21; their corresponding code was not changed in this wave.
