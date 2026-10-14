@@ -6,23 +6,21 @@ import DemoDisplay from "../demo/DemoDisplay";
 
 interface VNCViewerProps {
   url: string;
+  onDisconnect?: () => void;
 }
 
 interface RfbClient {
   disconnect: () => void;
   addEventListener: (type: "connect" | "disconnect", listener: () => void) => void;
+  removeEventListener: (type: "connect" | "disconnect", listener: () => void) => void;
 }
 
 interface RfbConstructor {
   new (target: HTMLElement, url: string, options?: Record<string, unknown>): RfbClient;
 }
 
-const NO_DISPLAY =
-  "This virtual machine has no VNC display. Add a -vnc 127.0.0.1:<n> QEMU argument in UTM, or use the serial console.";
-
-const LiveVNCViewer = ({ url }: VNCViewerProps) => {
+export const LiveVNCViewer = ({ url, onDisconnect }: VNCViewerProps) => {
   const vncContainerRef = useRef<HTMLDivElement | null>(null);
-  const connectedRef = useRef(false);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [detail, setDetail] = useState("Connecting to the display…");
@@ -33,42 +31,48 @@ const LiveVNCViewer = ({ url }: VNCViewerProps) => {
 
     let cancelled = false;
     let rfb: RfbClient | null = null;
-    connectedRef.current = false;
     setPhase("connecting");
     setDetail("Connecting to the display…");
+
+    const disconnected = () => {
+      if (cancelled) return;
+      setPhase("disconnected");
+      setDetail("The display connection was lost. Try reconnecting.");
+      onDisconnect?.();
+    };
+    const connected = () => {
+      if (!cancelled) setPhase("connected");
+    };
 
     import("@novnc/novnc/lib/rfb")
       .then((module: { default: RfbConstructor }) => {
         if (cancelled || !vncContainerRef.current) return;
 
-        rfb = new module.default(vncContainerRef.current, url, {
-          scaleViewport: true,
-          resizeSession: false,
-        });
-
-        rfb.addEventListener("connect", () => {
-          connectedRef.current = true;
-          setPhase("connected");
-        });
-
-        rfb.addEventListener("disconnect", () => {
-          setPhase("disconnected");
-          setDetail(
-            connectedRef.current ? "The display disconnected." : NO_DISPLAY,
-          );
-        });
+        try {
+          rfb = new module.default(vncContainerRef.current, url, {
+            scaleViewport: true,
+            resizeSession: false,
+          });
+          rfb.addEventListener("connect", connected);
+          rfb.addEventListener("disconnect", disconnected);
+        } catch {
+          disconnected();
+        }
       })
       .catch(() => {
         if (cancelled) return;
         setPhase("disconnected");
         setDetail("The display viewer failed to load.");
+        onDisconnect?.();
       });
 
     return () => {
       cancelled = true;
+      rfb?.removeEventListener("connect", connected);
+      rfb?.removeEventListener("disconnect", disconnected);
       rfb?.disconnect();
     };
-  }, [url, attempt]);
+  }, [url, attempt, onDisconnect]);
 
   return (
     <div className="vnc-shell">
@@ -76,7 +80,7 @@ const LiveVNCViewer = ({ url }: VNCViewerProps) => {
       {phase !== "connected" && (
         <div className="vnc-overlay">
           <p>{detail}</p>
-          {phase === "disconnected" && (
+          {phase === "disconnected" && !onDisconnect && (
             <button type="button" className="text-button" onClick={() => setAttempt((value) => value + 1)}>
               Try again
             </button>

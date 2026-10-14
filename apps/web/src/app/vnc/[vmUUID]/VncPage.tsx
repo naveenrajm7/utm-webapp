@@ -12,7 +12,7 @@ const AuthenticatedVnc = ({ vmUUID }: { vmUUID: string }) => {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <ConsoleGate vmId={vmUUID} kind="display">
-        <VNCViewer url={vncUrl} />
+        {(onDisconnect) => <VNCViewer url={vncUrl} onDisconnect={onDisconnect} />}
       </ConsoleGate>
     </div>
   );

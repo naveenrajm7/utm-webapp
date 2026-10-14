@@ -140,7 +140,7 @@ describe("VM flow with a fake /v1 API", () => {
     expect(consoleAvailability(vm, "serial").ready).toBe(false);
     // A direct route shows its gate until the detail request confirms support.
     expect(renderToStaticMarkup(
-      <ConsoleGate vmId={ID} kind="display"><span>Connected</span></ConsoleGate>,
+      <ConsoleGate vmId={ID} kind="display">{() => <span>Connected</span>}</ConsoleGate>,
     )).not.toContain("Connected");
   });
 
