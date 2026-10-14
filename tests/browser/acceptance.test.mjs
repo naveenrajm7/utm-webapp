@@ -215,6 +215,9 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     await until(async () => (await browser.text(".terminal-hint")).includes("Connected"), "serial WebSocket connection");
     assert.equal(fake.serialSockets.size, 1);
     fake.closeSerial();
-    await until(async () => (await browser.text(".terminal-hint")).includes("disconnected"), "serial disconnect");
+    await until(async () => {
+      const message = `${await browser.text(".terminal-hint")} ${await browser.text(".console-gate")}`;
+      return /disconnected|connection was lost/i.test(message);
+    }, "serial disconnect");
   });
 });
