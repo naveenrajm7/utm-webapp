@@ -202,7 +202,7 @@ describe("/v1 API", () => {
           .expect(422)
       ).body,
     ).toEqual({
-      error: { code: "unsupported", message: "Guest execution unavailable" },
+      error: { code: "unsupported", message: "Operation is unavailable" },
     });
     expect(
       (await request.get(`/v1/vms/${VM_ID}`).set("x-api-key", KEY).expect(500))
@@ -214,6 +214,23 @@ describe("/v1 API", () => {
       (await request.get("/v1/not-found").set("x-api-key", KEY).expect(404))
         .body.error.code,
     ).toBe("not_found");
+  });
+
+  it("redacts adapter details from v1, legacy, and recovered job errors", async () => {
+    const ports = makePorts();
+    const secret = "/Users/alice/work/packages/utm.jxa.js VM_NOT_FOUND (-2700) raw command output";
+    ports.utm.getVm = jest.fn(async () => { throw { code: "not_found", message: secret }; });
+    ports.sandbox.getJob = jest.fn(async () => ({
+      id: "job_1", state: "failed" as const, error: { code: "command_failed", message: secret },
+    }));
+    const request = authed(ports);
+    expect((await request.get(`/v1/vms/${VM_ID}`).set("x-api-key", KEY).expect(404)).body)
+      .toEqual({ error: { code: "not_found", message: "VM not found" } });
+    expect((await request.get(`/vm_info?uuid=${VM_ID}`).set("x-api-key", KEY).expect(404)).body)
+      .toEqual({ status: "error", message: "VM not found" });
+    expect((await request.get("/v1/jobs/job_1").set("x-api-key", KEY).expect(200)).body)
+      .toEqual({ id: "job_1", state: "failed",
+        error: { code: "command_failed", message: "UTM command failed" } });
   });
 
   it("returns structured errors for malformed JSON and unwired services", async () => {

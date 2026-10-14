@@ -26,12 +26,17 @@ export class JournalError extends Error {
 /** Synchronous atomic snapshots keep admission and state changes ordered. */
 export class JobJournal {
   private jobs = new Map<string, Job>();
+  private readonly lockPath: string;
+  private readonly lockToken = randomUUID();
+  private owned = false;
 
   constructor(readonly path: string = defaultJobJournalPath()) {
+    this.lockPath = `${path}.lock`;
     try {
       const repositoryRoot = resolve(__dirname, "../../../..");
       if (!isAbsolute(path) || path === repositoryRoot || path.startsWith(repositoryRoot + sep))
         throw new Error("journal path must be absolute and outside the repository");
+      this.acquire();
       if (existsSync(path)) {
         if (statSync(path).size > MAX_BYTES) throw new Error("journal exceeds size limit");
         const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -52,7 +57,60 @@ export class JobJournal {
       }
       if (interrupted) this.commit(recovered);
     } catch (error) {
+      this.close();
       throw new JournalError("Cannot load or recover the API job journal: " + String(error));
+    }
+  }
+
+  isOwned(): boolean {
+    if (!this.owned) return false;
+    try {
+      const lock = JSON.parse(readFileSync(this.lockPath, "utf8")) as { token?: string };
+      return lock.token === this.lockToken;
+    } catch { return false; }
+  }
+
+  close(): void {
+    if (!this.owned) return;
+    if (this.isOwned()) unlinkSync(this.lockPath);
+    this.owned = false;
+  }
+
+  private acquire(): void {
+    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+    const payload = JSON.stringify({ pid: process.pid, token: this.lockToken });
+    const create = () => {
+      const file = openSync(this.lockPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      try { writeFileSync(file, payload); fsyncSync(file); }
+      catch (error) { unlinkSync(this.lockPath); throw error; }
+      finally { closeSync(file); }
+      this.owned = true;
+    };
+    try { create(); return; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    // One reclaimer at a time prevents two starters from both removing a stale lock.
+    const reclaimPath = `${this.lockPath}.reclaim`;
+    const reclaim = openSync(reclaimPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try {
+      const owner = JSON.parse(readFileSync(this.lockPath, "utf8")) as { pid?: unknown; token?: unknown };
+      if (!Number.isInteger(owner.pid) || (owner.pid as number) < 1 ||
+          typeof owner.token !== "string")
+        throw new Error("invalid journal lock; inspect it before removal");
+      try {
+        process.kill(owner.pid as number, 0);
+        throw new Error("journal is already owned by a running API process");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+      unlinkSync(this.lockPath);
+      create();
+    } finally {
+      closeSync(reclaim);
+      unlinkSync(reclaimPath);
     }
   }
 
@@ -99,6 +157,7 @@ export class JobJournal {
   }
 
   private commit(next: Map<string, Job>): void {
+    if (!this.isOwned()) throw new JournalError("API job journal ownership lost");
     const payload = JSON.stringify({ version: 1, jobs: [...next.values()] });
     if (Buffer.byteLength(payload) > MAX_BYTES)
       throw new JournalError("API job journal exceeds size limit");

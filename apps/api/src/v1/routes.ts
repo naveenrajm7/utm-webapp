@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { isValidUuid } from "../utils/uuid";
+import { ClientError, clientError, publicJobError } from "../clientError";
 import type { ApiPorts, ManagementPort, PowerPort, SandboxPort, UtmPort, VmEdit } from "./ports";
 
 type ErrorCode =
@@ -17,6 +18,7 @@ type ErrorCode =
   | "conflict"
   | "unauthorized"
   | "service_unavailable"
+  | "outcome_unknown"
   | "internal";
 const statusForCode: Record<ErrorCode, number> = {
   invalid_input: 400,
@@ -33,32 +35,23 @@ const statusForCode: Record<ErrorCode, number> = {
   conflict: 409,
   unauthorized: 401,
   service_unavailable: 503,
+  outcome_unknown: 409,
   internal: 500,
 };
 
-export class ApiError extends Error {
+export class ApiError extends ClientError {
   constructor(
     public readonly code: ErrorCode,
     message: string,
   ) {
-    super(message);
+    super(code, message);
   }
 }
 
-const knownCodes = new Set<string>(Object.keys(statusForCode));
 const sendError = (res: Response, error: unknown): Response => {
-  const candidate = error as { code?: unknown; message?: unknown } | null;
-  const code =
-    typeof candidate?.code === "string" && knownCodes.has(candidate.code)
-      ? (candidate.code as ErrorCode)
-      : "internal";
-  const message =
-    code === "internal"
-      ? "Internal server error"
-      : typeof candidate?.message === "string" && candidate.message
-        ? candidate.message
-        : code;
-  return res.status(statusForCode[code]).json({ error: { code, message } });
+  const publicValue = clientError(error);
+  const code = publicValue.code as ErrorCode;
+  return res.status(statusForCode[code]).json({ error: publicValue });
 };
 
 const route =
@@ -294,7 +287,7 @@ export const createV1Router = (ports: Partial<ApiPorts> = {}): Router => {
         (ports.power && await ports.power.getJob(id)) ??
         (ports.sandbox && await ports.sandbox.getJob(id));
       if (!job) throw new ApiError("not_found", "Job not found");
-      res.json(job);
+      res.json(job.error ? { ...job, error: publicJobError(job.error) } : job);
     }),
   );
   router.use((_req, res) =>
