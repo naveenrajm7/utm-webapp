@@ -12,7 +12,7 @@ The npm-workspace monorepo currently has two running apps and one UTM package:
 | apps/api | Express REST and WebSocket API on port 3001 |
 | packages/utm-adapter | Injectable UTM process and JXA boundary |
 
-The merged main branch has authenticated /v1 VM inventory, details, power jobs, direct clone/edit/delete jobs, and a browser UI that consumes those routes. The adapter's clone/edit/delete path was live-validated on UTM 5.0.6 with a disposable QEMU clone. The combined API and browser management flow still needs live acceptance. Legacy REST routes and console target discovery use the same adapter instance as `/v1`. Sandbox routes exist as interfaces but return service_unavailable in the running API; MCP and sandbox integration is paused.
+The merged main branch has authenticated /v1 VM inventory, details, power jobs, direct clone/edit/delete jobs, and a browser UI that consumes those routes. The adapter's clone/edit/delete path and the combined API/browser management flow were live-validated on UTM 5.0.6 with disposable QEMU clones; see notes/Phase3Acceptance.md. A repeatable fake-backed browser suite is documented in notes/Phase4BrowserAcceptance.md. Legacy REST routes and console target discovery use the same adapter instance as `/v1`. Sandbox routes exist as interfaces but return service_unavailable in the running API; MCP and sandbox integration is paused.
 
 ## Local development and verification
 

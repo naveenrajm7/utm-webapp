@@ -24,6 +24,14 @@ The local VM flow and integration history are in
 [`notes/AgentHandoff.md`](notes/AgentHandoff.md). Sandbox and MCP integration
 remain paused.
 
+## Browser acceptance
+
+Run `npm ci`, `npm run build`, then `npm run test:browser` to exercise the real
+browser UI against a deterministic fake API. The suite owns localhost ports
+3000 and 3001 for its run, uses headless Chrome, and never mutates UTM. See
+[`notes/Phase4BrowserAcceptance.md`](notes/Phase4BrowserAcceptance.md) for
+coverage, environment, and the separate live integration gate.
+
 
 ## What's inside?
 
@@ -40,4 +48,3 @@ The `api` runs on port 3001 and must run on the Mac hosting UTM. It uses
 control, as well as serial and VNC endpoint discovery. The API owns REST,
 jobs, authentication, and WebSocket bridging; UTM-specific calls stay in the
 adapter. Start and stop require a VM that supports those actions.
-
