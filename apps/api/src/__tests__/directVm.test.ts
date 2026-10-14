@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { randomUUID } from "node:crypto";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import supertest from "supertest";
 import type { HostCapabilities, Vm } from "@repo/utm-adapter";
 import { createServer } from "../server";
 import { LocalUtmPort } from "../v1/localUtmPort";
 import { VmPowerJobs } from "../v1/vmPowerJobs";
+import { JobJournal, JournalError } from "../v1/jobJournal";
 
 const KEY = "direct-vm-key";
 const ID = "12345678-1234-1234-1234-123456789abc";
@@ -22,7 +27,14 @@ const vm = (id: string, name: string): Vm => ({
   },
 });
 
-const fixture = () => {
+const temporaryDirectories: string[] = [];
+const journalPath = () => {
+  const directory = mkdtempSync(join(tmpdir(), "utm-api-jobs-test-"));
+  temporaryDirectories.push(directory);
+  return join(directory, "jobs.json");
+};
+
+const fixture = (path = journalPath()) => {
   const vms = new Map([[ID, vm(ID, "Source")], [OTHER, vm(OTHER, "Other")]]);
   const host: HostCapabilities & { delete?: boolean } = {
     utmVersion: "5.0.6", utmctlAvailable: true, jxaAvailable: true,
@@ -71,10 +83,10 @@ const fixture = () => {
         capabilities: { ...vms.get(id)!.capabilities, start: true, stop: false } });
     },
   };
-  const jobs = new VmPowerJobs(adapter);
+  const jobs = new VmPowerJobs(adapter, path);
   const utm = new LocalUtmPort(adapter);
   const request = supertest(createServer({ utm, power: jobs, management: jobs }));
-  return { vms, host, calls, hooks, adapter, jobs, utm, request };
+  return { vms, host, calls, hooks, adapter, jobs, utm, request, path };
 };
 
 const completed = async (jobs: VmPowerJobs, id: string) => {
@@ -88,6 +100,10 @@ const completed = async (jobs: VmPowerJobs, id: string) => {
 
 describe("direct VM API", () => {
   beforeEach(() => { process.env.UTM_API_KEY = KEY; });
+  afterEach(() => {
+    for (const directory of temporaryDirectories.splice(0))
+      rmSync(directory, { recursive: true, force: true });
+  });
 
   it("validates exact JSON shapes and authenticates before admitting a job", async () => {
     const f = fixture();
@@ -181,10 +197,13 @@ describe("direct VM API", () => {
     f.hooks.clone = async () => { await gate; };
     const clone = await f.request.post("/v1/vms/" + ID + "/clone").set(auth)
       .send({ name: "Reserved" }).expect(202);
-    await f.request.post("/start").query({ uuid: ID }).set(auth).expect(409);
+    await f.request.post("/start").query({ uuid: ID.toUpperCase() }).set(auth).expect(409);
+    await f.request.post("/v1/vms/" + ID.toUpperCase() + "/start").set(auth).expect(409);
     await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(409);
     await f.request.delete("/v1/vms/" + ID).set(auth).send({ confirmName: "Source" }).expect(409);
     await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth)
+      .send({ name: "Reserved" }).expect(409);
+    await f.request.patch("/v1/vms/" + OTHER).set(auth)
       .send({ name: "Reserved" }).expect(409);
     release();
     expect((await completed(f.jobs, clone.body.jobId)).state).toBe("succeeded");
@@ -198,6 +217,67 @@ describe("direct VM API", () => {
     await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth).send({ name: "Free" }).expect(409);
     releasePower();
     expect((await completed(f.jobs, power.body.jobId)).state).toBe("succeeded");
+  });
+
+  it("reserves rename targets against concurrent clones and renames", async () => {
+    const f = fixture();
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.hooks.configure = async () => { await gate; };
+    const rename = await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ name: "Shared" }).expect(202);
+    await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth)
+      .send({ name: "shared" }).expect(409);
+    await f.request.patch("/v1/vms/" + OTHER).set(auth)
+      .send({ name: "Shared" }).expect(409);
+    release();
+    expect((await completed(f.jobs, rename.body.jobId)).state).toBe("succeeded");
+    await f.request.post("/v1/vms/" + OTHER + "/clone").set(auth)
+      .send({ name: "Shared" }).expect(409);
+  });
+
+  it("shares a case-insensitive UUID lock when legacy power is admitted first", async () => {
+    const f = fixture();
+    f.adapter.getVm = async id => {
+      const value = f.vms.get(id.toLowerCase());
+      if (!value) throw typed("not_found");
+      return value;
+    };
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.adapter.startVm = async () => { f.calls.push("start"); await gate; };
+    const first = await f.request.post("/start").query({ uuid: ID.toUpperCase() })
+      .set(auth).expect(202);
+    await f.request.patch("/v1/vms/" + ID).set(auth).send({ name: "New" }).expect(409);
+    await f.request.post("/v1/vms/" + ID + "/start").set(auth).expect(409);
+    release();
+    expect((await completed(f.jobs, first.body.jobId)).state).toBe("succeeded");
+    expect(f.calls).toEqual(["start"]);
+  });
+
+  it("rejects admission before UTM mutation when the journal cannot be written", async () => {
+    const f = fixture();
+    mkdirSync(f.path);
+    const response = await f.request.post("/v1/vms/" + ID + "/clone").set(auth)
+      .send({ name: "Copy" }).expect(503);
+    expect(response.body.error.code).toBe("service_unavailable");
+    await f.request.post("/start").query({ uuid: ID }).set(auth).expect(503);
+    expect(f.calls).toEqual([]);
+  });
+
+  it("skips the UTM command if persisting running state fails", async () => {
+    const f = fixture();
+    const update = jest.spyOn(JobJournal.prototype, "update")
+      .mockImplementationOnce(() => { throw new JournalError("disk unavailable"); });
+    try {
+      const response = await f.request.post("/v1/vms/" + ID + "/start")
+        .set(auth).expect(202);
+      expect(await completed(f.jobs, response.body.jobId))
+        .toMatchObject({ state: "failed", error: { code: "service_unavailable" } });
+      expect(f.calls).toEqual([]);
+    } finally {
+      update.mockRestore();
+    }
   });
 
   it("rechecks stopped state and current delete name before mutation", async () => {
@@ -261,15 +341,63 @@ describe("direct VM API", () => {
     expect(f.calls.filter(call => call === "clone")).toHaveLength(1);
   });
 
-  it("forgets old jobs after restart while inventory shows the actual state", async () => {
+  it("restores completed jobs after restart while inventory shows the actual state", async () => {
     const f = fixture();
     const edit = await f.request.patch("/v1/vms/" + ID).set(auth)
       .send({ name: "Changed" }).expect(202);
     expect((await completed(f.jobs, edit.body.jobId)).state).toBe("succeeded");
-    const restarted = new VmPowerJobs(f.adapter);
+    const restarted = new VmPowerJobs(f.adapter, f.path);
     const request = supertest(createServer({ utm: f.utm, power: restarted, management: restarted }));
-    expect((await request.get("/v1/jobs/" + edit.body.jobId).set(auth).expect(404)).body.error.code)
-      .toBe("not_found");
+    expect((await request.get("/v1/jobs/" + edit.body.jobId).set(auth).expect(200)).body)
+      .toEqual({ id: edit.body.jobId, state: "succeeded", result: { vmId: ID, status: "stopped" } });
     expect((await request.get("/v1/vms/" + ID).set(auth).expect(200)).body.name).toBe("Changed");
+  });
+
+  it("restores a completed typed failure after restart", async () => {
+    const f = fixture();
+    f.hooks.configure = async () => { throw typed("timeout"); };
+    const edit = await f.request.patch("/v1/vms/" + ID).set(auth)
+      .send({ memoryMiB: 8192 }).expect(202);
+    const completedJob = await completed(f.jobs, edit.body.jobId);
+    expect(completedJob?.state).toBe("failed");
+    expect(new VmPowerJobs(f.adapter, f.path).getJob(edit.body.jobId)).toEqual(completedJob);
+  });
+
+  it("evicts the oldest terminal job when the bounded journal fills", () => {
+    const path = journalPath();
+    const ids = Array.from({ length: 256 }, () => randomUUID());
+    writeFileSync(path, JSON.stringify({ version: 1, jobs: ids.map(id => ({
+      id, state: "succeeded", result: { vmId: ID, status: "stopped" },
+    })) }));
+    const journal = new JobJournal(path);
+    const admittedId = randomUUID();
+    journal.insert({ id: admittedId, state: "queued" });
+    expect(journal.get(ids[0]!)).toBeNull();
+    expect(journal.get(ids[1]!)).not.toBeNull();
+    expect(journal.get(admittedId)?.state).toBe("queued");
+  });
+
+  it("recovers interrupted queued and running jobs as unknown without replay", async () => {
+    const f = fixture();
+    const queuedId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
+    const queuedPath = journalPath();
+    new JobJournal(queuedPath).insert({ id: queuedId, state: "queued" });
+    expect(new VmPowerJobs(f.adapter, queuedPath).getJob(queuedId))
+      .toMatchObject({ state: "unknown", error: { code: "outcome_unknown" } });
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.adapter.startVm = async () => { f.calls.push("start"); await gate; };
+    const started = await f.request.post("/v1/vms/" + ID + "/start").set(auth).expect(202);
+    for (let i = 0; i < 50 && f.calls.length === 0; i++)
+      await new Promise(resolve => setTimeout(resolve, 5));
+    expect(f.calls).toEqual(["start"]);
+    const restarted = new VmPowerJobs(f.adapter, f.path);
+    const request = supertest(createServer({ utm: f.utm, power: restarted, management: restarted }));
+    expect((await request.get("/v1/jobs/" + started.body.jobId).set(auth).expect(200)).body)
+      .toMatchObject({ id: started.body.jobId, state: "unknown",
+        error: { code: "outcome_unknown" } });
+    expect(f.calls).toEqual(["start"]);
+    release();
+    await completed(f.jobs, started.body.jobId);
   });
 });
