@@ -2,9 +2,11 @@
 
 The Phase 1 assignments below are historical and have merged. The direct
 clone/edit/delete wave also merged; its contract is
-[DirectVmManagementContract.md](DirectVmManagementContract.md). For the current
-local acceptance and job recovery wave, follow
-[JobRecoveryContract.md](JobRecoveryContract.md).
+[DirectVmManagementContract.md](DirectVmManagementContract.md). The job recovery
+contract is [JobRecoveryContract.md](JobRecoveryContract.md), and the completed
+live acceptance is in [Phase3Acceptance.md](Phase3Acceptance.md). For the
+repeatable browser suite and phase 4 integration gate, see
+[Phase4BrowserAcceptance.md](Phase4BrowserAcceptance.md).
 
 ## Phase 1 integration update (2026-10-10)
 
