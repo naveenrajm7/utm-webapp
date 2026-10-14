@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { UtmPort as AdapterPort, Vm as AdapterVm } from "@repo/utm-adapter";
 import type { Job, JobRef, ManagementPort, PowerPort, VmEdit } from "./ports";
 import { JobJournal } from "./jobJournal";
+import { ClientError, clientError, publicJobError } from "../clientError";
 
 type PowerAdapter = Pick<AdapterPort, "getVm" | "startVm" | "stopVm">;
 type ManagementAdapter = Pick<AdapterPort,
@@ -9,27 +10,14 @@ type ManagementAdapter = Pick<AdapterPort,
 type Action = "start" | "stop";
 type ManagementAction = "clone" | "configure" | "delete";
 
-class OperationError extends Error {
+class OperationError extends ClientError {
   constructor(readonly code: "conflict" | "unsupported" | "service_unavailable" | "utm_failure", message: string) {
-    super(message);
+    super(code, message);
   }
 }
 
-const knownErrorCodes = new Set([
-  "invalid_input", "invalid_argument", "not_found", "conflict", "unsupported",
-  "unavailable", "timeout", "command_failed", "protocol_error", "output_limit",
-  "utm_failure", "service_unavailable", "not_managed", "internal",
-]);
-
 const jobError = (error: unknown): NonNullable<Job["error"]> => {
-  const candidate = error as { code?: unknown; message?: unknown } | null;
-  const code = typeof candidate?.code === "string" && knownErrorCodes.has(candidate.code)
-    ? candidate.code : "internal";
-  return {
-    code,
-    message: code !== "internal" && typeof candidate?.message === "string"
-      ? candidate.message : "VM operation failed",
-  };
+  return clientError(error);
 };
 
 const sameName = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
@@ -47,7 +35,14 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
 
   startVm(id: string): Promise<JobRef> { return this.power(id, "start"); }
   stopVm(id: string): Promise<JobRef> { return this.power(id, "stop"); }
-  getJob(id: string): Job | null { return this.volatileJobs.get(id) ?? this.journal.get(id); }
+  getJob(id: string): Job | null {
+    const job = this.volatileJobs.get(id) ?? this.journal.get(id);
+    return job?.error ? { ...job, error: publicJobError(job.error) } : job;
+  }
+
+  isReady(): boolean { return this.journal.isOwned(); }
+
+  close(): void { this.journal.close(); }
 
   cloneVm(id: string, name: string): Promise<JobRef> {
     return this.enqueue(id, async () => {

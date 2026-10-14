@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { isValidUuid } from "../utils/uuid";
 import type { ApiPorts, PowerPort, UtmPort, Vm } from "../v1/ports";
+import { clientError } from "../clientError";
 
 /** Preserve the old field names while sourcing every value from the v1 VM port. */
 const legacyVm = (vm: Vm, detail = false): Record<string, unknown> => {
@@ -20,8 +21,8 @@ const legacyVm = (vm: Vm, detail = false): Record<string, unknown> => {
 };
 
 const legacyError = (res: Response, error: unknown): Response => {
-  const candidate = error as { code?: unknown; message?: unknown } | null;
-  const code = candidate?.code;
+  const safe = clientError(error);
+  const code = safe.code;
   const status = code === "not_found" ? 404
     : code === "conflict" ? 409
     : code === "unsupported" ? 422
@@ -29,9 +30,7 @@ const legacyError = (res: Response, error: unknown): Response => {
     : 500;
   return res.status(status).json({
     status: "error",
-    message: typeof candidate?.message === "string" && status !== 500
-      ? candidate.message
-      : "VM operation failed",
+    message: status !== 500 ? safe.message : "VM operation failed",
   });
 };
 

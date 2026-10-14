@@ -17,7 +17,7 @@ const TerminalPage: React.FC = () => {
     <ApiKeyGate>
       <div style={{ width: '100vw', height: '100vh' }}>
         <ConsoleGate vmId={vmUUID} kind="serial">
-          <XTerminal vmUUID={vmUUID} />
+          {(onDisconnect) => <XTerminal vmUUID={vmUUID} onDisconnect={onDisconnect} />}
         </ConsoleGate>
       </div>
     </ApiKeyGate>
