@@ -49,7 +49,7 @@ was attempted in this lane before the phase 4 API and web changes merged.
 
 ## Integrated smoke after phase 4 merges
 
-The phase 4 API reliability and web console PRs were not open at the baseline
+The phase 4 API reliability and web console PRs were open at the baseline
 check. Once both are merged, update this branch from `origin/main`, repeat the
 five commands above, then run the API and browser with a fresh random
 `UTM_API_KEY` on reserved ports 3001 and 3000. Use `http://localhost:3000`.
@@ -73,3 +73,45 @@ If a source capability is absent, a console endpoint is unavailable, or a
 phase 4 PR has not merged, record that exact check and its observed API/UI
 state here. Do not use another VM for mutating checks without verifying it is
 a named disposable VM or clone.
+
+## Integrated verification (2026-10-14)
+
+After PR #23 (`ddbd31d`) and PR #25 (`fd36b20`) merged, this branch merged
+`origin/main` and ran `npm run build` (4/4 tasks), `npm run lint` (7/7),
+`npm run test` (102 tests: logger 1, adapter 22, API 48, web 31), and
+`npm run test:browser` (all seven scenarios, 8/8 Node test results). All
+commands exited successfully. The browser suite used its deterministic fake
+API; the following run used UTM 5.0.6 and the production API/UI.
+
+With a fresh random API key and journal on ports 3001/3000, authenticated
+inventory and detail reads showed the designated source
+`10EC4AB2-91F6-42AB-A3DF-0996C75B80CF` stopped, QEMU, 4096 MiB, with
+serial supported and display unsupported. The browser sent one
+`POST /v1/vms/<source-UUID>/clone` for `codex-pr24-reload-1792008047682`.
+During the running clone job `458f486a-1354-46b7-9e36-31926bfce21e`, the
+same tab reloaded, retained that job ID, and resumed polling without a second
+clone POST. The job succeeded with clone
+`92163828-277F-4A71-BEA3-B0B1AC1C84B4`; the browser then cleared its
+pending-job record and showed the clone.
+
+The browser saved clone settings through `PATCH /v1/vms/<clone-UUID>`;
+job `68b1fabf-7e94-41d6-a598-77229a377740` succeeded. UTM readback
+confirmed the name `codex-pr24-reload-1792008047682-edited`, 3584 MiB RAM,
+and one CPU core. The Delete dialog remained disabled until the exact current
+name was entered. `DELETE /v1/vms/<clone-UUID>` job
+`eed4b6b0-0b6b-4618-99a8-36853dfa7e1c` succeeded; browser, API, and
+`utmctl list --hide` inventories no longer showed the clone, and the browser
+cleared its pending job. After all live mutations ended, a synthetic queued
+journal record `649647fd-e158-4a0f-a852-6e77f529a326` recovered as
+`unknown` with `outcome_unknown`; the browser retained its job ID for review.
+The original VM remained stopped with its name, 4096 MiB RAM, and automatic
+CPU setting unchanged. `utmctl list --hide` emitted two `OSStatus error -10004`
+events, then exited 0 with a complete inventory.
+
+The PR #25 live run on a separate uniquely named clone verified dialog
+keyboard behavior, real serial connection loss and recovery after an API
+restart, and the stopped-VM console gate after a state refresh. The source
+and clone report `display: false`, so the VNC route correctly showed its
+unsupported-display gate; a live VNC protocol handshake was unavailable with
+this designated source. That test clone was also stopped and deleted, and the
+source remained unchanged.
