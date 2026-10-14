@@ -48,7 +48,7 @@ const fail = (status: number, code: string, message: string): Response =>
 const settleJobs = () => {
   const now = Date.now();
   jobs.forEach((job) => {
-    if (job.state === "succeeded" || job.state === "failed") return;
+    if (job.state === "succeeded" || job.state === "failed" || job.state === "unknown") return;
     if (now - job.startedAt >= JOB_MS) {
       try {
         const result = job.complete?.();

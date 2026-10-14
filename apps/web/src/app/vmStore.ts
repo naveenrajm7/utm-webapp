@@ -3,6 +3,10 @@ import {
   jobError, listVms, powerVm, type Job, type VmSettingsPatch,
 } from "./v1";
 import { friendlyListError, hasCapability, type VM, type VmAction } from "./vm";
+import {
+  clearPendingVmJob, readPendingVmJob, savePendingVmJob,
+  type PendingVmAction, type PendingVmJob,
+} from "./pendingVmJob";
 
 type VmApi = Pick<typeof import("./v1"),
   "getJob" | "getVm" | "listVms" | "powerVm" |
@@ -12,7 +16,7 @@ export type VmOperation =
   | { action: "clone"; name: string }
   | { action: "configure"; patch: VmSettingsPatch }
   | { action: "delete"; confirmName: string };
-type Action = VmAction | VmOperation["action"];
+type Action = PendingVmAction;
 
 export interface VmSnapshot {
   vms: VM[];
@@ -38,7 +42,9 @@ export class VmStore {
   private listRequest = 0;
   private detailRequest = 0;
   private checkingJob = false;
-  private pending: { id: string; action: Action } | null = null;
+  private pending: PendingVmJob | null = null;
+  private retryFailures = 0;
+  private nextPollAt = 0;
 
   private readonly client: VmApi;
   constructor(client: Partial<VmApi> = {}) {
@@ -142,6 +148,17 @@ export class VmStore {
     }
   };
 
+  resumePending = async () => {
+    const saved = readPendingVmJob();
+    if (saved && !this.pending) {
+      this.pending = saved;
+      this.publish({ busyUuid: saved.vmId, actionJob: { action: saved.action, state: "queued" } });
+      this.select(saved.vmId);
+    }
+    await this.refresh();
+    if (this.pending) await this.pollJob();
+  };
+
   runAction = async (id: string, action: VmAction) =>
     this.runJob(id, action, () => this.client.powerVm(id, action));
 
@@ -164,7 +181,7 @@ export class VmStore {
   private runJob = async (
     id: string, action: Action, submit: () => Promise<{ jobId: string }>,
   ) => {
-    if (this.state.busyUuid) return;
+    if (this.pending || this.state.busyUuid) return;
     const vm = this.state.selected?.id === id
       ? this.state.selected : this.state.vms.find((item) => item.id === id);
     if (!vm || !hasCapability(vm, action)) return;
@@ -172,7 +189,10 @@ export class VmStore {
     try {
       const result = await submit();
       if (!result.jobId) throw new Error("The API did not return a job ID.");
-      this.pending = { id: result.jobId, action };
+      this.pending = { jobId: result.jobId, vmId: id, action };
+      savePendingVmJob(this.pending);
+      this.retryFailures = 0;
+      this.nextPollAt = 0;
       this.publish({ actionJob: { action, state: "queued" } });
       await this.pollJob();
     } catch (caught) {
@@ -190,25 +210,32 @@ export class VmStore {
 
   pollJob = async () => {
     const pending = this.pending;
-    if (!pending || this.checkingJob) return;
+    if (!pending || this.checkingJob || Date.now() < this.nextPollAt) return;
     this.checkingJob = true;
     try {
-      const job = await this.client.getJob(pending.id);
+      const job = await this.client.getJob(pending.jobId);
       if (this.pending !== pending) return;
+      this.retryFailures = 0;
+      this.nextPollAt = 0;
       if (job.state === "succeeded" || job.state === "failed") {
         await this.refreshActualState();
         this.finishJob(job.state === "failed" ? jobError(job) : null);
+      } else if (job.state === "unknown") {
+        await this.refreshActualState();
+        this.finishUnknown(`${jobError(job)} Check the refreshed VM state to confirm the outcome before trying again.`);
       } else {
-        this.publish({ actionJob: { action: pending.action, state: job.state } });
+        this.publish({ actionJob: { action: pending.action, state: job.state }, actionError: null });
       }
-    } catch {
+    } catch (caught) {
       if (this.pending !== pending) return;
-      await this.refreshActualState();
-      this.finishJob(
-        pending.action === "clone" || pending.action === "delete"
-          ? "The job is unavailable. Check the refreshed VM list and confirm the outcome before trying again."
-          : "The power job is unavailable. Check its current status before retrying.",
-      );
+      if (caught instanceof ApiError && caught.status === 404) {
+        await this.refreshActualState();
+        this.finishUnknown("The job was not found. Check the refreshed VM state to confirm the outcome before trying again.");
+      } else {
+        this.retryFailures++;
+        this.nextPollAt = Date.now() + Math.min(2000 * 2 ** (this.retryFailures - 1), 10000);
+        this.publish({ actionError: "Could not check the pending job. Retrying shortly; the operation will not be submitted again." });
+      }
     } finally {
       this.checkingJob = false;
     }
@@ -216,7 +243,13 @@ export class VmStore {
 
   private finishJob = (error: string | null) => {
     this.pending = null;
+    clearPendingVmJob();
     this.publish({ busyUuid: null, actionJob: null, actionError: error });
+  };
+  private finishUnknown = (message: string) => {
+    // Keep the ID for a later reload, but stop polling an unprovable outcome.
+    this.pending = null;
+    this.publish({ busyUuid: null, actionJob: null, actionError: message });
   };
   private refreshActualState = async () => {
     this.detailRequest++;

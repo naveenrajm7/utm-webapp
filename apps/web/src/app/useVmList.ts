@@ -8,7 +8,7 @@ export const useVmList = () => {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
   useEffect(() => {
-    void store.refresh();
+    void store.resumePending();
     const inventoryTimer = window.setInterval(() => {
       if (document.visibilityState === "visible") void store.refresh();
     }, 5000);

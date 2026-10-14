@@ -21,7 +21,7 @@ export interface Sandbox {
 
 export interface Job {
   id: string;
-  state: "queued" | "running" | "succeeded" | "failed";
+  state: "queued" | "running" | "succeeded" | "failed" | "unknown";
   result?:
     | { stdout?: string; stderr?: string; exitCode?: number }
     | Record<string, unknown>;

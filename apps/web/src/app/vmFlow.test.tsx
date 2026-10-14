@@ -192,7 +192,7 @@ describe("VM flow with a fake /v1 API", () => {
     await store.pollJob();
     expect(store.getSnapshot().actionJob).toBeNull();
     expect(store.getSnapshot().busyUuid).toBeNull();
-    expect(store.getSnapshot().actionError).toContain("Check its current status");
+    expect(store.getSnapshot().actionError).toContain("confirm the outcome before trying again");
     expect(store.getSnapshot().selected?.status).toBe("running");
     expect(store.getSnapshot().selected?.capabilities).toEqual(running.capabilities);
     store.dismissActionError();
