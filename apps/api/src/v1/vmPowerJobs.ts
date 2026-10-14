@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { UtmPort as AdapterPort, Vm as AdapterVm } from "@repo/utm-adapter";
 import type { Job, JobRef, ManagementPort, PowerPort, VmEdit } from "./ports";
+import { JobJournal } from "./jobJournal";
 
 type PowerAdapter = Pick<AdapterPort, "getVm" | "startVm" | "stopVm">;
 type ManagementAdapter = Pick<AdapterPort,
@@ -31,29 +32,34 @@ const jobError = (error: unknown): NonNullable<Job["error"]> => {
   };
 };
 
-/** One in-memory lock and job registry for legacy power and all direct VM actions. */
-export class VmPowerJobs implements PowerPort, ManagementPort {
-  private readonly jobs = new Map<string, Job>();
-  private readonly active = new Set<string>();
-  private readonly cloneNames = new Set<string>();
+const sameName = (left: string, right: string) => left.toLowerCase() === right.toLowerCase();
 
-  constructor(private readonly adapter: PowerAdapter & Partial<ManagementAdapter>) {}
+/** One operation lock and durable job registry for legacy and /v1 actions. */
+export class VmPowerJobs implements PowerPort, ManagementPort {
+  private readonly journal: JobJournal;
+  private readonly volatileJobs = new Map<string, Job>();
+  private readonly active = new Set<string>();
+  private readonly reservedNames = new Set<string>();
+
+  constructor(private readonly adapter: PowerAdapter & Partial<ManagementAdapter>, journalPath?: string) {
+    this.journal = new JobJournal(journalPath);
+  }
 
   startVm(id: string): Promise<JobRef> { return this.power(id, "start"); }
   stopVm(id: string): Promise<JobRef> { return this.power(id, "stop"); }
-  getJob(id: string): Job | null { return this.jobs.get(id) ?? null; }
+  getJob(id: string): Job | null { return this.volatileJobs.get(id) ?? this.journal.get(id); }
 
   cloneVm(id: string, name: string): Promise<JobRef> {
     return this.enqueue(id, async () => {
       await this.checkManagement(id, "clone");
       const before = await this.managementAdapter().listVms();
-      if (before.some(vm => vm.name === name))
+      if (before.some(vm => sameName(vm.name, name)))
         throw new OperationError("conflict", "VM name already exists");
     }, async () => {
       const adapter = this.managementAdapter();
       const before = await adapter.listVms();
       await this.checkManagement(id, "clone");
-      if (before.some(vm => vm.name === name))
+      if (before.some(vm => sameName(vm.name, name)))
         throw new OperationError("conflict", "VM name already exists");
       const knownIds = new Set(before.map(vm => vm.id.toLowerCase()));
       let created: AdapterVm | undefined;
@@ -63,7 +69,7 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
       let after: AdapterVm[];
       try { after = await adapter.listVms(); }
       catch (error) { throw this.unknownOutcome(mutationError ?? error); }
-      const matches = after.filter(vm => vm.name === name && !knownIds.has(vm.id.toLowerCase()));
+      const matches = after.filter(vm => sameName(vm.name, name) && !knownIds.has(vm.id.toLowerCase()));
       if (matches.length === 1 && (!created || created.id.toLowerCase() === matches[0].id.toLowerCase()))
         return { vmId: matches[0].id };
       if (mutationError) throw this.unknownOutcome(mutationError);
@@ -72,8 +78,17 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
   }
 
   configureVm(id: string, patch: VmEdit): Promise<JobRef> {
-    return this.enqueue(id, async () => { await this.checkManagement(id, "configure"); }, async () => {
+    const check = async () => {
       await this.checkManagement(id, "configure");
+      if (patch.name !== undefined) {
+        const inventory = await this.managementAdapter().listVms();
+        if (inventory.some(vm => vm.id.toLowerCase() !== id.toLowerCase() &&
+            sameName(vm.name, patch.name!)))
+          throw new OperationError("conflict", "VM name already exists");
+      }
+    };
+    return this.enqueue(id, check, async () => {
+      await check();
       let mutationError: unknown;
       try { await this.managementAdapter().configureVm(id, patch); }
       catch (error) { mutationError = error; }
@@ -84,7 +99,7 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
       if (matches && vm.status === "stopped") return { vmId: id, status: "stopped" };
       if (mutationError) throw this.unknownOutcome(mutationError);
       throw new OperationError("utm_failure", "VM edit was not confirmed by readback");
-    });
+    }, patch.name);
   }
 
   deleteVm(id: string, confirmName: string): Promise<JobRef> {
@@ -144,37 +159,52 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
   }
 
   private async enqueue<T>(id: string, admit: () => Promise<T>,
-    operate: (admitted: T) => Promise<unknown>, cloneName?: string): Promise<JobRef> {
-    if (this.active.has(id)) throw new OperationError("conflict", "VM already has an operation job");
-    if (cloneName && this.cloneNames.has(cloneName))
-      throw new OperationError("conflict", "Clone name is reserved by another job");
-    this.active.add(id);
-    if (cloneName) this.cloneNames.add(cloneName);
+    operate: (admitted: T) => Promise<unknown>, desiredName?: string): Promise<JobRef> {
+    const vmKey = id.toLowerCase();
+    const nameKey = desiredName?.toLowerCase();
+    if (this.active.has(vmKey)) throw new OperationError("conflict", "VM already has an operation job");
+    if (nameKey && this.reservedNames.has(nameKey))
+      throw new OperationError("conflict", "VM name is reserved by another job");
+    this.active.add(vmKey);
+    if (nameKey) this.reservedNames.add(nameKey);
     try {
       const admitted = await admit();
       const jobId = randomUUID();
       const job: Job = { id: jobId, state: "queued" };
-      this.jobs.set(jobId, job);
-      this.prune();
+      this.journal.insert(job);
       queueMicrotask(() => {
         void (async () => {
-          job.state = "running";
           try {
-            job.result = await operate(admitted);
-            job.state = "succeeded";
+            this.journal.update({ id: jobId, state: "running" });
           } catch (error) {
-            job.error = jobError(error);
-            job.state = "failed";
-          } finally {
-            this.active.delete(id);
-            if (cloneName) this.cloneNames.delete(cloneName);
+            const failed: Job = { id: jobId, state: "failed", error: jobError(error) };
+            try { this.journal.update(failed); }
+            catch { this.volatileJobs.set(jobId, failed); }
+            this.active.delete(vmKey);
+            if (nameKey) this.reservedNames.delete(nameKey);
+            return;
           }
+          let terminal: Job;
+          try {
+            terminal = { id: jobId, state: "succeeded", result: await operate(admitted) };
+          } catch (error) {
+            terminal = { id: jobId, state: "failed", error: jobError(error) };
+          }
+          try { this.journal.update(terminal); }
+          catch {
+            this.volatileJobs.set(jobId, { id: jobId, state: "unknown", error: {
+              code: "outcome_unknown",
+              message: "Cannot persist the completed job; inspect refreshed VM state before another action",
+            } });
+          }
+          this.active.delete(vmKey);
+          if (nameKey) this.reservedNames.delete(nameKey);
         })();
       });
       return { jobId };
     } catch (error) {
-      this.active.delete(id);
-      if (cloneName) this.cloneNames.delete(cloneName);
+      this.active.delete(vmKey);
+      if (nameKey) this.reservedNames.delete(nameKey);
       throw error;
     }
   }
@@ -184,11 +214,4 @@ export class VmPowerJobs implements PowerPort, ManagementPort {
     return Object.assign(new Error(typed.message + "; refresh inventory before retrying"), { code: typed.code });
   }
 
-  private prune(): void {
-    if (this.jobs.size <= 256) return;
-    for (const [id, job] of this.jobs) {
-      if (job.state === "succeeded" || job.state === "failed") this.jobs.delete(id);
-      if (this.jobs.size <= 256) break;
-    }
-  }
 }

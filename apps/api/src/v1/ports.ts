@@ -32,7 +32,7 @@ export interface SandboxRef extends JobRef {
 
 export interface Job {
   id: string;
-  state: "queued" | "running" | "succeeded" | "failed";
+  state: "queued" | "running" | "succeeded" | "failed" | "unknown";
   result?: unknown;
   error?: { code: string; message: string };
 }
