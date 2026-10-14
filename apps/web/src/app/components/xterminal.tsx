@@ -9,11 +9,12 @@ import { IS_DEMO } from "../demo";
 
 interface XTerminalProps {
   vmUUID: string;
+  onDisconnect?: () => void;
 }
 
 type SerialHint = "connecting" | "quiet" | "live" | "failed";
 
-function XTerminal({ vmUUID }: XTerminalProps) {
+function XTerminal({ vmUUID, onDisconnect }: XTerminalProps) {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const [hint, setHint] = useState<SerialHint>("connecting");
@@ -65,11 +66,25 @@ function XTerminal({ vmUUID }: XTerminalProps) {
       };
     }
 
-    const ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
     let disposed = false;
     let sawOutput = false;
+    let failed = false;
+    let ws: WebSocket | null = null;
 
-    ws.onmessage = (event) => {
+    const fail = () => {
+      if (disposed || failed) return;
+      failed = true;
+      setHint("failed");
+      onDisconnect?.();
+    };
+
+    try {
+      ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
+    } catch {
+      fail();
+    }
+
+    if (ws) ws.onmessage = (event) => {
       if (typeof event.data !== "string") return;
       try {
         const data = JSON.parse(event.data) as { type?: string; data?: string };
@@ -88,28 +103,24 @@ function XTerminal({ vmUUID }: XTerminalProps) {
       }
     };
 
-    ws.onopen = () => {
+    if (ws) ws.onopen = () => {
       fitSoon();
       term.focus();
       if (!sawOutput) setHint("quiet");
     };
 
-    ws.onerror = () => {
-      if (!disposed) setHint("failed");
-    };
+    if (ws) ws.onerror = fail;
 
-    ws.onclose = () => {
-      if (!disposed) setHint("failed");
-    };
+    if (ws) ws.onclose = fail;
 
-    term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
+    const resizeSubscription = term.onResize(({ cols, rows }) => {
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols, rows }));
       }
     });
 
-    term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) {
+    const dataSubscription = term.onData((data) => {
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "command", data }));
       }
     });
@@ -118,16 +129,24 @@ function XTerminal({ vmUUID }: XTerminalProps) {
       disposed = true;
       window.cancelAnimationFrame(frame);
       observer.disconnect();
-      ws.close();
+      resizeSubscription.dispose();
+      dataSubscription.dispose();
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        ws.close();
+      }
       term.dispose();
     };
-  }, [vmUUID]);
+  }, [vmUUID, onDisconnect]);
 
   const hintText =
     hint === "connecting"
       ? "Connecting to the serial console…"
       : hint === "failed"
-        ? "Serial console disconnected."
+        ? "Serial connection lost. Reconnect to try again."
         : "Connected. Press Enter for login.";
 
   return (

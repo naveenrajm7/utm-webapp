@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getVm } from "../v1";
 import { canOpenConsole, hasCapability, type VM } from "../vm";
 
@@ -19,25 +19,36 @@ export default function ConsoleGate({
 }: {
   vmId: string;
   kind: ConsoleKind;
-  children: ReactNode;
+  children: (onDisconnect: () => void) => ReactNode;
 }) {
   const [vm, setVm] = useState<VM | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [disconnected, setDisconnected] = useState(false);
+  const request = useRef(0);
+  const handleDisconnect = useCallback(() => setDisconnected(true), []);
   const refresh = useCallback(async () => {
+    const current = ++request.current;
     setLoading(true);
     try {
-      setVm(await getVm(vmId));
+      const next = await getVm(vmId);
+      if (current !== request.current) return;
+      setVm(next);
       setError(null);
+      setDisconnected(false);
     } catch (caught) {
+      if (current !== request.current) return;
       setVm(null);
       setError(caught instanceof Error ? caught.message : "Could not load virtual machine");
     } finally {
-      setLoading(false);
+      if (current === request.current) setLoading(false);
     }
   }, [vmId]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => { request.current++; };
+  }, [refresh]);
 
   if (loading) return <div className="console-gate" role="status"><p>Checking console availability…</p></div>;
   if (error || !vm) return (
@@ -53,5 +64,11 @@ export default function ConsoleGate({
       <button type="button" className="push-button" onClick={() => void refresh()}>Refresh status</button>
     </div>
   );
-  return <>{children}</>;
+  if (disconnected) return (
+    <div className="console-gate" role="alert">
+      <p>The {kind} connection was lost. The console may still be available.</p>
+      <button type="button" className="push-button" onClick={() => void refresh()}>Reconnect</button>
+    </div>
+  );
+  return <>{children(handleDisconnect)}</>;
 }

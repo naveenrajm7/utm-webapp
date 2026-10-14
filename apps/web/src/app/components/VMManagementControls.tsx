@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { VmOperation } from "../vmStore";
 import { hasCapability, type VM } from "../vm";
 
@@ -37,8 +37,63 @@ const VMManagementControls = ({ vm, busy, onSubmit }: Props) => {
   const [cores, setCores] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const submittedRef = useRef(false);
 
-  const open = (next: Mode) => {
+  const available = {
+    clone: hasCapability(vm, "clone"),
+    configure: hasCapability(vm, "configure"),
+    delete: hasCapability(vm, "delete"),
+  };
+  const activeMode = mode && available[mode] ? mode : null;
+
+  useEffect(() => {
+    if (activeMode) {
+      dialogRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    } else if (returnFocusRef.current) {
+      const trigger = returnFocusRef.current;
+      if (!submittedRef.current && trigger.isConnected && !trigger.disabled) {
+        trigger.focus();
+      } else {
+        actionsRef.current?.focus();
+      }
+      returnFocusRef.current = null;
+      submittedRef.current = false;
+    }
+  }, [activeMode]);
+
+  const close = (submitted = false) => {
+    submittedRef.current = submitted;
+    setMode(null);
+  };
+
+  const onDialogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'input:not(:disabled), button:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const open = (next: Mode, trigger: HTMLButtonElement) => {
+    returnFocusRef.current = trigger;
     setMode(next);
     setName(next === "configure" ? vm.name : "");
     setMemory(vm.memoryMiB == null ? "" : String(vm.memoryMiB));
@@ -93,31 +148,26 @@ const VMManagementControls = ({ vm, busy, onSubmit }: Props) => {
       }
       onSubmit(vm.id, { action: "delete", confirmName: confirmation });
     }
-    setMode(null);
+    close(true);
   };
-
-  const available = {
-    clone: hasCapability(vm, "clone"),
-    configure: hasCapability(vm, "configure"),
-    delete: hasCapability(vm, "delete"),
-  };
-  const activeMode = mode && available[mode] ? mode : null;
 
   if (!available.clone && !available.configure && !available.delete) return null;
 
   return (
     <div className="vm-management">
-      <div className="vm-management-actions">
+      <div className="vm-management-actions" ref={actionsRef} tabIndex={-1}
+        role="group" aria-label="VM management actions">
         {available.clone && <button type="button" className="push-button" disabled={busy}
-          onClick={() => open("clone")}>Clone</button>}
+          onClick={(event) => open("clone", event.currentTarget)}>Clone</button>}
         {available.configure && <button type="button" className="push-button" disabled={busy}
-          onClick={() => open("configure")}>Settings</button>}
+          onClick={(event) => open("configure", event.currentTarget)}>Settings</button>}
         {available.delete && <button type="button" className="push-button vm-delete-button" disabled={busy}
-          onClick={() => open("delete")}>Delete</button>}
+          onClick={(event) => open("delete", event.currentTarget)}>Delete</button>}
       </div>
       {activeMode && (
         <div className="vm-dialog-backdrop">
-          <section className="vm-dialog" role="dialog" aria-modal="true"
+          <section className="vm-dialog" role="dialog" aria-modal="true" ref={dialogRef}
+            onKeyDown={onDialogKeyDown}
             aria-label={activeMode === "configure" ? "VM settings" : activeMode === "clone" ? "Clone VM" : "Delete VM"}>
             <h2>{activeMode === "configure" ? "VM settings" : activeMode === "clone" ? "Clone VM" : "Delete VM"}</h2>
             <p>{vm.name}</p>
@@ -147,7 +197,7 @@ const VMManagementControls = ({ vm, busy, onSubmit }: Props) => {
               )}
               {formError && <p className="vm-form-error" role="alert">{formError}</p>}
               <div className="vm-dialog-actions">
-                <button type="button" className="push-button" onClick={() => setMode(null)}>Cancel</button>
+                <button type="button" className="push-button" onClick={() => close()}>Cancel</button>
                 <button type="submit" className={activeMode === "delete"
                   ? "push-button vm-delete-button" : "push-button is-default"}
                   disabled={busy || (activeMode === "delete" &&
