@@ -155,6 +155,7 @@ describe("local UTM web backend", () => {
     const started = await first.post(`/v1/vms/${ID}/start`).set(auth).expect(202);
     expect((await completed(ports.power, started.body.jobId)).state).toBe("succeeded");
 
+    ports.power.close();
     const restarted = supertest(createServer({ utm: ports.utm,
       power: new VmPowerJobs(ports.adapter, ports.path) }));
     expect((await restarted.get(`/v1/jobs/${started.body.jobId}`).set(auth).expect(200)).body)

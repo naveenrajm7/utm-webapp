@@ -22,7 +22,7 @@ const attachSerial = async (ws: WebSocket, vmUUID: string, resolver: ConsoleReso
     const message = (error as Error).message;
     log(`Could not attach to VM ${vmUUID}: ${message}`);
     if (ws.readyState === WebSocket.OPEN) {
-      sendSerialNotice(ws, `Cannot attach to serial console: ${message}`);
+      sendSerialNotice(ws, "Cannot attach to serial console: console unavailable");
       ws.close();
     }
     return;

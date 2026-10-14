@@ -83,6 +83,7 @@ export interface SandboxPort {
 
 export interface ApiPorts {
   utm: UtmPort;
+  readiness?: () => boolean | Promise<boolean>;
   sandbox: SandboxPort;
   power?: PowerPort;
   management?: ManagementPort;

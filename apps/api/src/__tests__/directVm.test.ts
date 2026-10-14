@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -346,6 +347,7 @@ describe("direct VM API", () => {
     const edit = await f.request.patch("/v1/vms/" + ID).set(auth)
       .send({ name: "Changed" }).expect(202);
     expect((await completed(f.jobs, edit.body.jobId)).state).toBe("succeeded");
+    f.jobs.close();
     const restarted = new VmPowerJobs(f.adapter, f.path);
     const request = supertest(createServer({ utm: f.utm, power: restarted, management: restarted }));
     expect((await request.get("/v1/jobs/" + edit.body.jobId).set(auth).expect(200)).body)
@@ -360,6 +362,7 @@ describe("direct VM API", () => {
       .send({ memoryMiB: 8192 }).expect(202);
     const completedJob = await completed(f.jobs, edit.body.jobId);
     expect(completedJob?.state).toBe("failed");
+    f.jobs.close();
     expect(new VmPowerJobs(f.adapter, f.path).getJob(edit.body.jobId)).toEqual(completedJob);
   });
 
@@ -377,11 +380,39 @@ describe("direct VM API", () => {
     expect(journal.get(admittedId)?.state).toBe("queued");
   });
 
+  it("gives one process exclusive journal ownership and releases it cleanly", () => {
+    const path = journalPath();
+    const first = new JobJournal(path);
+    expect(() => new JobJournal(path)).toThrow("already owned");
+    const childCode = `const { JobJournal } = require(${JSON.stringify(join(__dirname, "../v1/jobJournal.ts"))});
+      try { new JobJournal(process.env.JOURNAL_PATH).close(); process.exit(0); }
+      catch { process.exit(2); }`;
+    const runChild = () => spawnSync(process.execPath,
+      ["-r", "esbuild-register", "-e", childCode],
+      { env: { ...process.env, JOURNAL_PATH: path } });
+    expect(runChild().status).toBe(2);
+    first.close();
+    expect(runChild().status).toBe(0);
+    expect(new JobJournal(path).isOwned()).toBe(true);
+  });
+
+  it("recovers a stale journal lock after its process has exited", () => {
+    const path = journalPath();
+    const exited = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    expect(exited.status).toBe(0);
+    writeFileSync(`${path}.lock`, JSON.stringify({ pid: exited.pid, token: "stale" }));
+    const journal = new JobJournal(path);
+    expect(journal.isOwned()).toBe(true);
+    journal.close();
+  });
+
   it("recovers interrupted queued and running jobs as unknown without replay", async () => {
     const f = fixture();
     const queuedId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
     const queuedPath = journalPath();
-    new JobJournal(queuedPath).insert({ id: queuedId, state: "queued" });
+    const queuedJournal = new JobJournal(queuedPath);
+    queuedJournal.insert({ id: queuedId, state: "queued" });
+    queuedJournal.close();
     expect(new VmPowerJobs(f.adapter, queuedPath).getJob(queuedId))
       .toMatchObject({ state: "unknown", error: { code: "outcome_unknown" } });
     let release = () => {};
@@ -391,6 +422,7 @@ describe("direct VM API", () => {
     for (let i = 0; i < 50 && f.calls.length === 0; i++)
       await new Promise(resolve => setTimeout(resolve, 5));
     expect(f.calls).toEqual(["start"]);
+    f.jobs.close();
     const restarted = new VmPowerJobs(f.adapter, f.path);
     const request = supertest(createServer({ utm: f.utm, power: restarted, management: restarted }));
     expect((await request.get("/v1/jobs/" + started.body.jobId).set(auth).expect(200)).body)
@@ -398,6 +430,9 @@ describe("direct VM API", () => {
         error: { code: "outcome_unknown" } });
     expect(f.calls).toEqual(["start"]);
     release();
-    await completed(f.jobs, started.body.jobId);
+    for (let i = 0; i < 50 && f.jobs.getJob(started.body.jobId)?.state !== "unknown"; i++)
+      await new Promise(resolve => setTimeout(resolve, 5));
+    expect(f.jobs.getJob(started.body.jobId)?.state).toBe("unknown");
+    expect(restarted.getJob(started.body.jobId)?.state).toBe("unknown");
   });
 });

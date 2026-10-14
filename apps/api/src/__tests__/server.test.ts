@@ -24,7 +24,7 @@ const closed = (ws: WebSocket): Promise<number> => new Promise((resolve, reject)
 describe("server", () => {
   beforeEach(() => {
     process.env.UTM_API_KEY = TEST_KEY;
-    process.env.UTM_WEB_ORIGIN = "http://localhost:3000";
+    delete process.env.UTM_WEB_ORIGIN;
   });
 
   it("status check returns 200 without a key", async () => {
@@ -86,16 +86,62 @@ describe("server", () => {
       .expect(404);
   });
 
-  it("allows CORS only for the configured local web origin", async () => {
-    const request = supertest(createServer());
-    const allowed = await request.options("/v1/vms")
-      .set("Origin", "http://localhost:3000")
-      .set("Access-Control-Request-Method", "GET");
-    expect(allowed.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+  it("allows authenticated browser requests and preflight from both default origins", async () => {
+    const request = supertest(createServer({ utm: {
+      getCapabilities: async () => ({ utmVersion: "5.0.6", features: {} }),
+      listVms: async () => [],
+      getVm: async () => { throw new Error("unused"); },
+    } }));
+    for (const origin of ["http://localhost:3000", "http://127.0.0.1:3000"]) {
+      const allowed = await request.options("/v1/vms")
+        .set("Origin", origin)
+        .set("Access-Control-Request-Method", "GET")
+        .set("Access-Control-Request-Headers", "authorization").expect(204);
+      expect(allowed.headers["access-control-allow-origin"]).toBe(origin);
+      expect(allowed.headers["access-control-allow-headers"]).toContain("authorization");
+      const unauthorized = await request.get("/v1/vms").set("Origin", origin).expect(401);
+      expect(unauthorized.headers["access-control-allow-origin"]).toBe(origin);
+      const authorized = await request.get("/v1/vms").set("Origin", origin)
+        .set("Authorization", `Bearer ${TEST_KEY}`).expect(200);
+      expect(authorized.headers["access-control-allow-origin"]).toBe(origin);
+      expect(authorized.body).toEqual([]);
+    }
     const denied = await request.options("/v1/vms")
       .set("Origin", "http://other.example")
       .set("Access-Control-Request-Method", "GET");
     expect(denied.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("readiness checks the UTM inventory and journal while liveness stays independent", async () => {
+    let journalOwned = true;
+    let inventoryWorks = true;
+    const app = createServer({
+      utm: {
+        getCapabilities: async () => ({ utmVersion: "5.0.6", features: {} }),
+        listVms: async () => {
+          if (!inventoryWorks) throw new Error("/private/local/utm.jxa.js raw output");
+          return [];
+        },
+        getVm: async () => { throw new Error("unused"); },
+      },
+      readiness: () => journalOwned,
+    });
+    const request = supertest(app);
+    expect((await request.get("/ready").expect(200)).body).toEqual({ ready: true });
+    inventoryWorks = false;
+    expect((await request.get("/ready").expect(503)).body).toEqual({ ready: false });
+    inventoryWorks = true;
+    journalOwned = false;
+    expect((await request.get("/ready").expect(503)).body).toEqual({ ready: false });
+    expect((await request.get("/status").expect(200)).body).toEqual({ ok: true });
+  });
+
+  it("returns a stable legacy error for malformed JSON", async () => {
+    const response = await supertest(createServer()).post("/start?uuid=" + VM_ID)
+      .set("Authorization", `Bearer ${TEST_KEY}`)
+      .set("Content-Type", "application/json")
+      .send("{broken").expect(400);
+    expect(response.body).toEqual({ status: "error", message: "Invalid request body" });
   });
 
   it("refuses a non-loopback API host", () => {
@@ -118,6 +164,14 @@ describe("server", () => {
       if (previous === undefined) delete process.env.UTM_WEB_ORIGIN;
       else process.env.UTM_WEB_ORIGIN = previous;
     }
+  });
+
+  it("an explicit local origin narrows browser access", async () => {
+    process.env.UTM_WEB_ORIGIN = "http://localhost:3000";
+    const response = await supertest(createServer()).options("/v1/vms")
+      .set("Origin", "http://127.0.0.1:3000")
+      .set("Access-Control-Request-Method", "GET");
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
   it("closes a WebSocket without a token", async () => {
@@ -185,19 +239,29 @@ describe("server", () => {
     }
   });
 
-  it("rejects a WebSocket from an unconfigured browser origin", async () => {
+  it("accepts both default WebSocket origins and rejects other origins", async () => {
     const server = http.createServer(createServer());
+    const calls: string[] = [];
     attachWebSocketServer(server, {
-      getSerialDevice: async () => { throw new Error("resolver must not run"); },
+      getSerialDevice: async () => { calls.push("serial"); throw new Error("/private/local/utm.jxa.js raw output"); },
       getVncTarget: async () => { throw new Error("resolver must not run"); },
     });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     try {
+      for (const origin of ["http://localhost:3000", "http://127.0.0.1:3000"]) {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}&token=${TEST_KEY}`, { origin });
+        const messages: string[] = [];
+        ws.on("message", data => messages.push(data.toString()));
+        await closed(ws);
+        expect(messages.join(" ")).toContain("console unavailable");
+        expect(messages.join(" ")).not.toContain("/private/");
+      }
       const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
         origin: "http://other.example",
       });
       expect(await closed(ws)).toBe(1008);
+      expect(calls).toHaveLength(2);
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }
@@ -219,7 +283,7 @@ describe("server", () => {
       const messages: string[] = [];
       serial.on("message", data => messages.push(data.toString()));
       await closed(serial);
-      expect(messages.join(" ")).toContain("no serial port");
+      expect(messages.join(" ")).toContain("console unavailable");
 
       const vnc = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
         origin: "http://localhost:3000",

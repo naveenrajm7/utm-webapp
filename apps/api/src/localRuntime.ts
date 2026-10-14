@@ -12,12 +12,24 @@ type LocalAdapter = Pick<AdapterPort,
 /** Use one adapter instance for REST inventory, power jobs, and consoles. */
 export const createLocalRuntime = (adapter: LocalAdapter): http.Server => {
   const operations = new VmPowerJobs(adapter);
-  const app = createServer({
-    utm: new LocalUtmPort(adapter),
-    power: operations,
-    management: operations,
-  });
-  const server = http.createServer(app);
-  attachWebSocketServer(server, adapter);
-  return server;
+  try {
+    const app = createServer({
+      utm: new LocalUtmPort(adapter),
+      power: operations,
+      management: operations,
+      readiness: () => operations.isReady(),
+    });
+    const server = http.createServer(app);
+    const release = () => operations.close();
+    process.on("exit", release);
+    server.on("close", () => {
+      process.removeListener("exit", release);
+      release();
+    });
+    attachWebSocketServer(server, adapter);
+    return server;
+  } catch (error) {
+    operations.close();
+    throw error;
+  }
 };

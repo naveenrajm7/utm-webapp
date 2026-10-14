@@ -3,7 +3,11 @@
 The local API stores VM operation jobs at
 `~/Library/Application Support/UTM Web/api-jobs.json` by default. Set
 `UTM_API_JOB_JOURNAL_PATH` to an absolute path outside the repository to move
-it. Run only one API process against a journal path at a time. The API creates
+it. The API takes an exclusive `<journal path>.lock` before reading or writing
+the journal. A second API process using the same path fails startup. A clean
+shutdown releases the lock; after a crash, startup removes a stale lock only
+when its recorded PID no longer exists. An invalid lock requires local
+inspection before removal. The API creates
 the parent directory with mode `0700` and atomic replacement files with mode
 `0600`. The journal contains job IDs, states, small operation results, and
 typed errors; it does not store API keys, request bodies, or VM configurations.
@@ -30,3 +34,11 @@ still be finishing outside the API. After an unknown result, wait for VM state
 to settle and inspect refreshed inventory and details before attempting
 another action, especially clone or delete. The journal provides recovery of
 job tracking, not exactly once execution or a cross process UTM lock.
+
+`GET /status` is an unauthenticated liveness check. `GET /ready` is an
+unauthenticated readiness check: it returns `200 {"ready":true}` only while
+the API owns its journal and a UTM inventory read succeeds. Otherwise it
+returns `503 {"ready":false}` without exposing UTM diagnostics. Default
+browser origins are `http://localhost:3000` and `http://127.0.0.1:3000` for
+REST preflight and WebSockets. Setting `UTM_WEB_ORIGIN` to one local HTTP(S)
+origin narrows access to that origin. Other browser origins are denied.

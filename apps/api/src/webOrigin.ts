@@ -1,6 +1,7 @@
-/** The only browser origin allowed to reach the local API and WebSocket bridge. */
-export const configuredWebOrigin = (): string => {
-  const value = process.env.UTM_WEB_ORIGIN || "http://localhost:3000";
+/** Explicit configuration limits access to one origin; defaults cover both browser loopback names. */
+export const configuredWebOrigins = (): string[] => {
+  const value = process.env.UTM_WEB_ORIGIN;
+  if (!value) return ["http://localhost:3000", "http://127.0.0.1:3000"];
   let url: URL;
   try {
     url = new URL(value);
@@ -14,11 +15,14 @@ export const configuredWebOrigin = (): string => {
   ) {
     throw new Error("UTM_WEB_ORIGIN must be a local HTTP origin");
   }
-  return url.origin;
+  return [url.origin];
 };
 
+export const isAllowedWebOrigin = (origin: string | undefined): boolean =>
+  origin !== undefined && configuredWebOrigins().includes(origin);
+
 export const isAllowedWebSocketOrigin = (origin: string | undefined): boolean =>
-  origin === undefined || origin === configuredWebOrigin();
+  origin === undefined || isAllowedWebOrigin(origin);
 
 export const configuredApiHost = (): string => {
   const host = process.env.HOST || "127.0.0.1";
