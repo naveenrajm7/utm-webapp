@@ -197,6 +197,24 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     assert.equal(mutationCount(), 1);
   });
 
+  await t.test("transient polling failure retains the job and retries", async () => {
+    await browser.evaluate("sessionStorage.removeItem('utm-pending-vm-job')");
+    await prepare();
+    await openSource();
+    fake.failNextAcceptedJobPoll();
+    await browser.click('[aria-label="Start virtual machine"]');
+    await waitMutation(1);
+    const jobId = lastJob();
+    await until(async () => (await alertText()).includes("Retrying shortly"), "transient polling message", 10000);
+    assert.deepEqual(JSON.parse(await pending()), { jobId, vmId: SOURCE_ID, action: "start" });
+    assert.equal(mutationCount(), 1);
+    await until(() => fake.requests.filter((request) => request.path === `/v1/jobs/${jobId}`).length >= 2, "retry of same job", 10000);
+    fake.finish(jobId);
+    await waitNoJob();
+    assert.equal(mutationCount(), 1);
+    await until(async () => (await browser.text(".toolbar-title-status")).includes("Running"), "running after retry");
+  });
+
   await t.test("stopped, unsupported, connected and disconnected serial states", async () => {
     await browser.evaluate("sessionStorage.removeItem('utm-pending-vm-job')");
     await prepare();

@@ -24,9 +24,10 @@ The browser checks API-key unlock, rejection and relock, inventory and detail
 readback, start/force-stop jobs, clone/settings/delete request bodies and
 confirmation, same-tab reload during clone and delete jobs, preservation of a
 single job ID without duplicate mutation, terminal `unknown` and missing-job
-404 outcomes, and stopped/unsupported/connected/disconnected serial-console
-states. The live VNC handshake is outside this fake suite; its stopped display
-gate and disabled launch control are checked.
+404 outcomes, retry after a transient 503 job poll, and
+stopped/unsupported/connected/disconnected serial-console states. The live
+VNC handshake is outside this fake suite; its stopped display gate and
+disabled launch control are checked.
 
 ## Baseline results (2026-10-14)
 
@@ -35,7 +36,7 @@ API and web PRs. The test machine has Node 23.4.0, npm 10.9.2, Chrome
 155.0.8059.40, and UTM 5.0.6. `npm ci` installed 831 packages. `npm run build`
 passed 4/4 tasks; `npm run lint` passed 7/7; `npm test` passed 4/4 tasks
 (logger 1, adapter 22, API 42, web 22 tests). `npm run test:browser` passed
-all six browser cases (7/7 Node test results, including the parent test).
+all seven browser cases (8/8 Node test results, including the parent test).
 The first expanded run exposed a test-harness cleanup race after its
 assertions passed; the Chrome process is now awaited before its temporary
 profile is removed. The final run exited successfully.

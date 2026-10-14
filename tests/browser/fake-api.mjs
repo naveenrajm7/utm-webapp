@@ -20,6 +20,8 @@ export class FakeApi {
   reset() {
     this.vms = new Map([[SOURCE_ID, source()]]);
     this.jobs = new Map();
+    this.jobFailures = new Map();
+    this.nextJobPollFails = false;
     this.mutations = [];
     this.requests = [];
     this.sequence = 0;
@@ -43,6 +45,10 @@ export class FakeApi {
   closeSerial() {
     for (const socket of this.serialSockets) socket.destroy();
     this.serialSockets.clear();
+  }
+
+  failNextAcceptedJobPoll() {
+    this.nextJobPollFails = true;
   }
 
   upgrade(request, socket) {
@@ -115,13 +121,23 @@ export class FakeApi {
       if (action === "delete" && body.confirmName !== vm.name)
         return this.reply(response, 409, { error: { code: "conflict", message: "Confirmation must match the current VM name" } });
       const jobId = `acceptance-job-${++this.sequence}`;
+      if (this.nextJobPollFails) {
+        this.jobFailures.set(jobId, 1);
+        this.nextJobPollFails = false;
+      }
       this.mutations.push({ method: request.method, path, body, jobId });
       this.jobs.set(jobId, { id: jobId, state: "running", operation: { vmId, action, body } });
       return this.reply(response, 202, { jobId });
     }
     const jobMatch = /^\/v1\/jobs\/([^/]+)$/.exec(path);
     if (request.method === "GET" && jobMatch) {
-      const job = this.jobs.get(decodeURIComponent(jobMatch[1]));
+      const jobId = decodeURIComponent(jobMatch[1]);
+      const failures = this.jobFailures.get(jobId) || 0;
+      if (failures > 0) {
+        this.jobFailures.set(jobId, failures - 1);
+        return this.reply(response, 503, { error: { code: "service_unavailable", message: "Temporary fake outage" } });
+      }
+      const job = this.jobs.get(jobId);
       return job
         ? this.reply(response, 200, { id: job.id, state: job.state, result: job.result, error: job.error })
         : this.reply(response, 404, { error: { code: "not_found", message: "Job not found" } });
