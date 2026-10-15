@@ -243,14 +243,14 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     await clickButton("Reconnect", ".console-gate");
     await until(() => fake.serialSockets.size === 1, "serial reconnect");
     await until(async () => (await browser.text(".terminal-hint")).includes("Connected"), "reconnected serial hint");
-    assert.equal(fake.upgrades.filter((upgrade) => upgrade.path === "/").length, 2);
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length, 2);
     await browser.navigate(`/terminal/${SOURCE_ID}`);
-    await until(() => fake.upgrades.filter((upgrade) => upgrade.path === "/").length === 3, "serial after direct page reload");
+    await until(() => fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length === 3, "serial after direct page reload");
     await until(async () => (await browser.text(".terminal-hint")).includes("Connected"), "serial after direct page reload hint");
     fake.vms.get(SOURCE_ID).capabilities.serial = false;
     await browser.navigate(`/terminal/${SOURCE_ID}`);
     await until(async () => (await browser.text(".console-gate")).includes("no supported serial console"), "unsupported serial after direct reload");
-    assert.equal(fake.upgrades.filter((upgrade) => upgrade.path === "/").length, 3);
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length, 3);
   });
 
   await t.test("unsupported display gate and VNC upgrade on a direct page load", async () => {
@@ -262,7 +262,7 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     assert.equal(fake.upgrades.length, 0);
     fake.vms.get(SOURCE_ID).capabilities.display = true;
     await clickButton("Refresh status", ".console-gate");
-    await until(() => fake.upgrades.some((upgrade) => upgrade.path === "/vnc"), "VNC WebSocket upgrade");
-    assert.equal(fake.upgrades.filter((upgrade) => upgrade.path === "/vnc").length, 1);
+    await until(() => fake.upgrades.some((upgrade) => upgrade.kind === "vnc"), "VNC WebSocket upgrade");
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "vnc").length, 1);
   });
 });

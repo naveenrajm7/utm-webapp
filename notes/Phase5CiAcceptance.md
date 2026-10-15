@@ -64,7 +64,20 @@ waiting for the stored job ID before checking it. The second run passed.
 `npm run build:demo --workspace=web` also passed, generating 14 static pages
 for the existing GitHub Pages preview.
 
-The production one-origin browser suite and all manual UTM steps remain to be
-run after the runtime PR is integrated. Record the final local command
-results, pull request Actions run, and any unrun manual steps in the pull
-request description.
+In a temporary integration worktree based on runtime commit `9dd11a8` from
+PR #27 plus this acceptance branch, `npm ci` installed 831 packages,
+`npm run build` passed 4/4 tasks, `npm run lint` passed 7/7 tasks, and
+`npm test` passed 105 tests (logger 1, adapter 22, API 50, web 32).
+`npm run test:browser` passed 9/9 fake API Node results and 1/1 production
+one-origin result, including REST, serial reconnect/direct reload, and the
+VNC upgrade on the same listener. This combined run exposed an old/new
+WebSocket path mismatch in the fake; accepting both route sets fixed it.
+The integrated `npm run build:demo --workspace=web` passed and generated
+14 static pages.
+
+A read-only `utmctl list --hide` on 2026-10-15 confirmed the historical
+disposable source still had its exact UUID/name and was stopped. It emitted
+two `OSStatus error -10004` event messages before exiting successfully.
+No live start/stop or serial/VNC check was run. The one-origin suite must be
+repeated on this branch after PR #27 lands on `main`, and the final Actions
+result must be recorded in the pull request.

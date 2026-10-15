@@ -63,15 +63,17 @@ export class FakeApi {
 
   upgrade(request, socket) {
     const url = new URL(request.url, `http://127.0.0.1:${this.port}`);
-    if (!["/", "/vnc"].includes(url.pathname) || url.searchParams.get("token") !== API_KEY ||
+    const kind = ["/", "/ws/serial"].includes(url.pathname) ? "serial"
+      : ["/vnc", "/ws/vnc"].includes(url.pathname) ? "vnc" : null;
+    if (!kind || url.searchParams.get("token") !== API_KEY ||
         !this.vms.has(url.searchParams.get("vmUUID"))) return socket.destroy();
     const accept = createHash("sha1")
       .update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
       .digest("base64");
     socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    const sockets = url.pathname === "/vnc" ? this.vncSockets : this.serialSockets;
-    this.upgrades.push({ path: url.pathname, host: request.headers.host, origin: request.headers.origin });
+    const sockets = kind === "vnc" ? this.vncSockets : this.serialSockets;
+    this.upgrades.push({ kind, path: url.pathname, host: request.headers.host, origin: request.headers.origin });
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
   }
