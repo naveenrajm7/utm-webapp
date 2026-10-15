@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CHROME = process.env.CHROME_PATH || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const WEB_ORIGIN = `http://127.0.0.1:${process.env.BROWSER_WEB_PORT || 3000}`;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function until(check, label, timeout = 15000) {
@@ -69,7 +70,7 @@ export class Browser {
   }
 
   async navigate(path = "/") {
-    await this.send("Page.navigate", { url: `http://localhost:3000${path}` });
+    await this.send("Page.navigate", { url: `${WEB_ORIGIN}${path}` });
     await until(() => this.evaluate("document.readyState === 'complete'"), "page load");
   }
 

@@ -9,7 +9,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "test:browser": "node --test tests/browser/acceptance.test.mjs"
+    "test:browser": "node tests/browser/run.mjs"
   },
   "devDependencies": {
     "prettier": "^3.2.5",
