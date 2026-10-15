@@ -1,5 +1,38 @@
 # Local API job journal
 
+## Single origin production runtime
+
+From the repository root, run `npm ci`, `npm run build`, set a nonempty
+`UTM_API_KEY`, then run `npm run start:production --workspace=api`. The one Node
+process listens on `127.0.0.1:${PORT:-3000}` and serves the Next production
+build, `/v1` and legacy REST routes, and console upgrades at `/ws/serial` and
+`/ws/vnc`. Open `http://127.0.0.1:3000` (or the configured `PORT`) and enter
+the API key in the browser. The web build must be present at `apps/web/.next`;
+Next serves its build assets and dynamic console pages directly, including
+reloads of `/terminal/<vm UUID>` and `/vnc/<vm UUID>`. No source directory is
+mounted as static content. Unknown `/v1` requests return the authenticated
+JSON `not_found` shape, and unknown WebSocket upgrade paths return HTTP 404.
+
+The acceptance test hook is `createProductionRuntime(fakeAdapter, options)`
+from `apps/api/src/productionRuntime.ts` (or its built `dist` module). It
+returns an HTTP server before it listens, so a test can use
+`server.listen(0, "127.0.0.1")` and inspect the assigned free port. Pass an
+optional `webHandler` to replace Next for an API-only integration test; omit it
+to test the actual built UI. Both forms keep the injected adapter and job
+journal in the same process. Browser console clients use
+`/ws/serial?vmUUID=<UUID>&token=<key>` and
+`/ws/vnc?vmUUID=<UUID>&token=<key>` on the page origin. Production upgrades
+require an `Origin` matching that exact loopback listener.
+After `npm run build`, `npm run smoke:production --workspace=api` runs the
+built Next app and an unsupported-console fake adapter on a free loopback
+port. It verifies direct page reloads, a build asset, static isolation,
+authenticated REST, and both console upgrades without contacting UTM.
+
+`npm run dev` remains the two-listener local development flow: Next on port
+3000 and the API on loopback port 3001.
+
+## Job journal
+
 The local API stores VM operation jobs at
 `~/Library/Application Support/UTM Web/api-jobs.json` by default. Set
 `UTM_API_JOB_JOURNAL_PATH` to an absolute path outside the repository to move

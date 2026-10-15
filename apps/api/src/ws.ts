@@ -1,13 +1,22 @@
 import { execFile } from "child_process";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import net from "net";
+import type { Duplex } from "node:stream";
 import { spawn } from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import { log } from "@repo/logger";
 import { isAuthorizedRequest } from "./auth";
 import type { ConsoleResolver } from "./services/consoleResolver";
 import { isValidUuid } from "./utils/uuid";
-import { isAllowedWebSocketOrigin } from "./webOrigin";
+import { isAllowedWebSocketOrigin, isSameOriginWebSocket } from "./webOrigin";
+
+export type WebSocketMode = "development" | "single-origin";
+
+const consolePath = (path: string, mode: WebSocketMode): "serial" | "vnc" | null => {
+  if (path === "/ws/serial" || (mode === "development" && path === "/")) return "serial";
+  if (path === "/ws/vnc" || (mode === "development" && path === "/vnc")) return "vnc";
+  return null;
+};
 
 /** Serial clients render whatever they receive, so errors are shown as output. */
 const sendSerialNotice = (ws: WebSocket, text: string) => {
@@ -153,6 +162,7 @@ export const handleWebSocketConnection = async (
   ws: WebSocket,
   req: IncomingMessage,
   resolver: ConsoleResolver,
+  mode: WebSocketMode = "development",
 ) => {
   let url: URL;
   try {
@@ -167,12 +177,15 @@ export const handleWebSocketConnection = async (
     return;
   }
 
-  if (!isAllowedWebSocketOrigin(req.headers.origin)) {
+  if (mode === "single-origin"
+    ? !isSameOriginWebSocket(req)
+    : !isAllowedWebSocketOrigin(req.headers.origin)) {
     ws.close(1008, "invalid origin");
     return;
   }
 
-  if (url.pathname !== "/" && url.pathname !== "/vnc") {
+  const kind = consolePath(url.pathname, mode);
+  if (!kind) {
     ws.close(1008, "invalid path");
     return;
   }
@@ -190,7 +203,7 @@ export const handleWebSocketConnection = async (
 
   log(`WebSocket connection established for VM: ${vmUUID} (${url.pathname})`);
 
-  if (url.pathname === "/vnc") {
+  if (kind === "vnc") {
     await attachVnc(ws, vmUUID, resolver);
     return;
   }
@@ -201,17 +214,18 @@ export const handleWebSocketConnection = async (
 export const attachWebSocketServer = (
   server: HttpServer,
   resolver: ConsoleResolver,
+  mode: WebSocketMode = "development",
 ): WebSocketServer => {
   // noVNC asks for the "binary" subprotocol, so accept it.
   const wss = new WebSocketServer({
-    server,
+    ...(mode === "single-origin" ? { noServer: true } : { server }),
     maxPayload: 1024 * 1024,
     handleProtocols: (protocols: Set<string>) =>
       protocols.has("binary") ? "binary" : false,
   });
 
   wss.on("connection", (ws, req) => {
-    void handleWebSocketConnection(ws, req, resolver).catch((error: unknown) => {
+    void handleWebSocketConnection(ws, req, resolver, mode).catch((error: unknown) => {
       log(
         `WebSocket bridge failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -219,6 +233,35 @@ export const attachWebSocketServer = (
         ws.close(1011, "bridge unavailable");
     });
   });
+
+  if (mode === "single-origin") {
+    const reject = (socket: Duplex, status: number, message: string) => {
+      socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    };
+    server.on("upgrade", (req, socket, head) => {
+      let url: URL;
+      try {
+        url = new URL(req.url || "/", "http://localhost");
+      } catch {
+        reject(socket, 400, "Bad Request");
+        return;
+      }
+      if (!consolePath(url.pathname, mode)) {
+        reject(socket, 404, "Not Found");
+      } else if (!isSameOriginWebSocket(req)) {
+        reject(socket, 403, "Forbidden");
+      } else if (!isAuthorizedRequest(req, url)) {
+        reject(socket, 401, "Unauthorized");
+      } else if (!isValidUuid(url.searchParams.get("vmUUID")) ||
+        url.searchParams.getAll("vmUUID").length !== 1 ||
+        [...url.searchParams.keys()].some(key => key !== "vmUUID" && key !== "token")) {
+        reject(socket, 400, "Bad Request");
+      } else {
+        wss.handleUpgrade(req, socket, head, ws => wss.emit("connection", ws, req));
+      }
+    });
+    server.on("close", () => wss.close());
+  }
 
   return wss;
 };

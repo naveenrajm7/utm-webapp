@@ -8,6 +8,8 @@
     "dev": "nodemon --exec \"node -r esbuild-register ./src/index.ts\" -e .ts",
     "lint": "tsc --noEmit && eslint \"src/**/*.ts*\" --max-warnings 0",
     "start": "node dist/index.js",
+    "start:production": "node dist/production.js",
+    "smoke:production": "node scripts/smoke-production.cjs",
     "test": "jest --detectOpenHandles",
     "prebuild": "npm run build --workspace=@repo/logger && npm run build --workspace=@repo/utm-adapter",
     "predev": "npm run build --workspace=@repo/logger && npm run build --workspace=@repo/utm-adapter",
