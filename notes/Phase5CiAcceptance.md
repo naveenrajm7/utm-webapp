@@ -40,8 +40,8 @@ clone, or delete a personal VM. Do not run these steps in CI.
    display page. Confirm the display connects, then disconnect/reconnect and
    reload that page. If unsupported or unavailable, record the API capability,
    UI message, and exact reason; do not claim a VNC handshake passed.
-6. Stop only the disposable VM through the browser. Record the POST path, job
-   ID, terminal job result, and stopped state in browser, API, and
+6. Use the browser's Force stop control only on the disposable VM. Record the
+   POST path, job ID, terminal job result, and stopped state in browser, API, and
    `utmctl list --hide`. Confirm any source VM remains unchanged.
 
 The named historical disposable source is
@@ -75,9 +75,36 @@ WebSocket path mismatch in the fake; accepting both route sets fixed it.
 The integrated `npm run build:demo --workspace=web` passed and generated
 14 static pages.
 
-A read-only `utmctl list --hide` on 2026-10-15 confirmed the historical
-disposable source still had its exact UUID/name and was stopped. It emitted
-two `OSStatus error -10004` event messages before exiting successfully.
-No live start/stop or serial/VNC check was run. The one-origin suite must be
-repeated on this branch after PR #27 lands on `main`, and the final Actions
-result must be recorded in the pull request.
+## Live disposable-VM result (2026-10-15)
+
+Using the combined production runtime on `127.0.0.1:3000` with a fresh API
+key and separate journal, authenticated `/v1/capabilities`, `/v1/vms`, and
+`/v1/vms/10EC4AB2-91F6-42AB-A3DF-0996C75B80CF` returned 200. UTM 5.0.6
+reported the exact named source stopped, QEMU, 4096 MiB, automatic CPU,
+`serial: true`, and `display: false`. The API returned 30 inventory items.
+
+Only that disposable source was started and stopped. An API start job
+`1cad8e88-f2e4-4310-bf8b-7e81b87b2bde` and stop job
+`d0150fdc-3c48-4eb4-8080-63031d96dc52` both succeeded, with state
+readback. The browser connected to `ws://127.0.0.1:3000/ws/serial`, recovered
+after its WebSocket was closed, and reconnected after a direct page reload.
+The serial transport connected; guest output was not asserted. The live VNC
+page showed its unsupported-display gate and opened no VNC socket, so a live
+VNC handshake remains unrun.
+
+The browser start control also produced succeeded job
+`7ac26662-a0e9-4a0a-b3f3-7aed75430ac8`. Its force-stop control produced
+job `9fee59d3-785f-4434-8172-713562f72a77`, subsequently confirmed
+`succeeded` with stopped API and `utmctl` state. A prior browser harness
+attempt clicked stop before the start job cleared; its fallback API stop
+`c26bf0b8-ba27-47d0-8138-9048e27ddd74` succeeded. The final harness
+queried the browser stop job while it was still `running`; a subsequent API
+read confirmed success. These were harness timing errors, not product job
+failures. The source ended stopped. No personal VM was changed.
+
+`utmctl list --hide` emitted two `OSStatus error -10004` event messages before
+exiting 0 with the stopped source present. The one-origin suite must be
+repeated on this branch after PR #27 lands on `main`. PR #26's GitHub Actions
+run `38783547114` passed `npm ci`, build, lint, unit tests, runner Chrome
+discovery, and fake browser acceptance on `macos-latest`; it preceded PR #27,
+so the final integrated Actions run remains pending.
