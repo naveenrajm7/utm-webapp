@@ -1,4 +1,4 @@
-import http from "node:http";
+import http, { type RequestListener } from "node:http";
 import type { UtmPort as AdapterPort } from "@repo/utm-adapter";
 import { createServer } from "./server";
 import { LocalUtmPort } from "./v1/localUtmPort";
@@ -10,7 +10,27 @@ type LocalAdapter = Pick<AdapterPort,
   "cloneVm" | "configureVm" | "deleteVm" | "getSerialDevice" | "getVncTarget">;
 
 /** Use one adapter instance for REST inventory, power jobs, and consoles. */
-export const createLocalRuntime = (adapter: LocalAdapter): http.Server => {
+const API_PATHS = new Set([
+  "/status", "/ready", "/list_vms", "/vm_info", "/status_vm", "/start", "/stop",
+]);
+
+const isApiPath = (rawUrl: string | undefined): boolean => {
+  const path = rawUrl?.split("?", 1)[0] || "/";
+  return path === "/v1" || path.startsWith("/v1/") ||
+    path.startsWith("/message/") || API_PATHS.has(path);
+};
+
+export interface LocalRuntimeOptions {
+  webHandler?: RequestListener;
+  singleOrigin?: boolean;
+}
+
+export type InjectableAdapter = LocalAdapter;
+
+export const createLocalRuntime = (
+  adapter: LocalAdapter,
+  options: LocalRuntimeOptions = {},
+): http.Server => {
   const operations = new VmPowerJobs(adapter);
   try {
     const app = createServer({
@@ -18,15 +38,30 @@ export const createLocalRuntime = (adapter: LocalAdapter): http.Server => {
       power: operations,
       management: operations,
       readiness: () => operations.isReady(),
+    }, { singleOrigin: options.singleOrigin });
+    const server = http.createServer((req, res) => {
+      if (options.webHandler && !isApiPath(req.url)) {
+        try {
+          void Promise.resolve(options.webHandler(req, res)).catch(() => {
+            if (!res.headersSent) res.statusCode = 500;
+            if (!res.writableEnded) res.end();
+          });
+        } catch {
+          if (!res.headersSent) res.statusCode = 500;
+          if (!res.writableEnded) res.end();
+        }
+        return;
+      }
+      app(req, res);
     });
-    const server = http.createServer(app);
     const release = () => operations.close();
     process.on("exit", release);
     server.on("close", () => {
       process.removeListener("exit", release);
       release();
     });
-    attachWebSocketServer(server, adapter);
+    attachWebSocketServer(server, adapter,
+      options.singleOrigin ? "single-origin" : "development");
     return server;
   } catch (error) {
     operations.close();

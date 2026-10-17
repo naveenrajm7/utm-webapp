@@ -79,7 +79,7 @@ function XTerminal({ vmUUID, onDisconnect }: XTerminalProps) {
     };
 
     try {
-      ws = new WebSocket(getAuthenticatedWebSocketUrl("/", { vmUUID }));
+      ws = new WebSocket(getAuthenticatedWebSocketUrl("/ws/serial", { vmUUID }));
     } catch {
       fail();
     }

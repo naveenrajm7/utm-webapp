@@ -13,13 +13,18 @@ import { createV1Router } from "./v1/routes";
 import type { ApiPorts } from "./v1/ports";
 import { configuredWebOrigins, isAllowedWebOrigin } from "./webOrigin";
 
-export const createServer = (ports: Partial<ApiPorts> = {}): Express => {
+export const createServer = (
+  ports: Partial<ApiPorts> = {},
+  options: { singleOrigin?: boolean } = {},
+): Express => {
   const app = express();
-  configuredWebOrigins();
+  if (!options.singleOrigin) configuredWebOrigins();
   app
     .disable("x-powered-by")
     .use(morgan("dev"))
-    .use(cors({ origin: (origin, callback) => callback(null, isAllowedWebOrigin(origin)) }))
+    .use(cors({ origin: options.singleOrigin
+      ? false
+      : (origin, callback) => callback(null, isAllowedWebOrigin(origin)) }))
     .use("/v1", (req, res, next) => {
       if (!isAuthorizedRequest(req)) {
         return res

@@ -339,7 +339,7 @@ const VMInfo = ({
           : activeView === "display"
             ? (renderGate("display") ?? (
                 <VNCViewer
-                  url={getAuthenticatedWebSocketUrl("/vnc", { vmUUID: vm.id })}
+                  url={getAuthenticatedWebSocketUrl("/ws/vnc", { vmUUID: vm.id })}
                 />
               ))
             : (renderGate("serial") ?? <XTerminal vmUUID={vm.id} />)}

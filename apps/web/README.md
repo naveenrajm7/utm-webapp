@@ -7,7 +7,11 @@ corresponding VM capability.
 
 From the repository root, run `npm ci`, set `UTM_API_KEY` to a random local
 secret, and run `npm run dev`. Open `http://localhost:3000` on that Mac and
-enter the same API key. The API listens on `127.0.0.1:3001` by default.
+enter the same API key. Development keeps the API on `127.0.0.1:3001`.
+For production, run `npm run build` followed by
+`npm run start:production --workspace=api`; the UI, REST API, and consoles
+share `http://127.0.0.1:${PORT:-3000}`. The production client makes relative
+`/v1` requests and opens `/ws/serial` or `/ws/vnc` on the page origin.
 
 The managed sandbox panel is parked until its backend service is integrated.
 The `SandboxPanel` component and client helpers remain available for that
