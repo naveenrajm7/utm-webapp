@@ -103,8 +103,37 @@ read confirmed success. These were harness timing errors, not product job
 failures. The source ended stopped. No personal VM was changed.
 
 `utmctl list --hide` emitted two `OSStatus error -10004` event messages before
-exiting 0 with the stopped source present. The one-origin suite must be
-repeated on this branch after PR #27 lands on `main`. PR #26's GitHub Actions
-run `38783547114` passed `npm ci`, build, lint, unit tests, runner Chrome
-discovery, and fake browser acceptance on `macos-latest`; it preceded PR #27,
-so the final integrated Actions run remains pending.
+exiting 0 with the stopped source present. The one-origin suite was
+repeated after PR #27 merged; see final verification below. PR #26's
+GitHub Actions run `38783547114` passed `npm ci`, build, lint, unit tests, runner Chrome
+discovery, and fake browser acceptance on `macos-latest`; it preceded
+PR #27. The integrated Actions run is tracked on PR #26.
+
+## Final integrated verification (2026-10-17)
+
+After PR #27 merged as `772d20d`, this branch merged `origin/main` and ran a
+clean `npm ci` (831 packages), `npm run build` (4/4 tasks), `npm run lint`
+(7/7 tasks), and `npm run test` (105 tests: logger 1, adapter 22, API 50,
+web 32). `npm run test:browser` passed all eight fake API scenarios (9/9 Node
+results) and the production one-origin suite (1/1 result). The latter used
+one loopback listener for the built UI, authenticated REST, serial reconnect
+and direct reload, and a fake VNC bridge. `npm run build:demo --workspace=web`
+passed with 14 static pages. All commands exited 0.
+
+A separate real UTM 5.0.6 run used production UI/API on `127.0.0.1:3000`
+with a fresh API key and journal, and a uniquely named clone of the designated
+stopped Vagrant source. The clone UUID was
+`3EEFDAA3-2C0E-436E-B939-33A904D3CD38`. The browser authenticated
+inventory and detail, checked dialog keyboard focus/Escape, and opened the
+clone's serial console through `/ws/serial`. Direct page reload reopened the
+terminal. Stopping the server showed connection loss; after restart, the
+Reconnect action refreshed VM detail and reopened serial. After the clone
+stopped, Reconnect showed the stopped-VM gate without opening a serial
+transport. The VNC page showed the unsupported-display gate with no VNC
+transport because the source and clone advertise `display: false`. The clone
+was stopped and deleted. The source remained stopped and unchanged. A live
+VNC handshake still requires a separate verified disposable VM with display.
+
+The prior 2026-10-15 browser start/force-stop job checks above remain valid
+evidence for those controls. The final integrated local run used adapter
+start/stop on its disposable clone to focus on same-origin console behavior.
