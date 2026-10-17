@@ -6,6 +6,7 @@ import { API_KEY, CLONE_ID, FakeApi, SOURCE_ID } from "./fake-api.mjs";
 
 const fake = new FakeApi();
 const browser = new Browser();
+const webPort = Number(process.env.BROWSER_WEB_PORT || 3000);
 let web;
 let webOutput = "";
 
@@ -14,7 +15,9 @@ const pending = () => browser.evaluate("sessionStorage.getItem('utm-pending-vm-j
 const alertText = () => browser.text(".action-error");
 const mutationCount = () => fake.mutations.length;
 const lastJob = () => fake.mutations.at(-1).jobId;
-const waitMutation = (count) => until(() => mutationCount() === count, `${count} mutation(s)`);
+const waitMutation = (count) => until(async () =>
+  mutationCount() === count && (await pending())?.includes(lastJob()),
+`${count} mutation(s) with stored job`);
 const waitRow = (name) => until(() => browser.exists(row(name)), `${name} in inventory`);
 const waitNoJob = () => until(async () => !(await pending()), "pending job to clear", 10000);
 
@@ -41,7 +44,7 @@ async function prepare() {
 
 before(async () => {
   await fake.start();
-  web = spawn(process.execPath, ["../../node_modules/next/dist/bin/next", "start", "-p", "3000"], {
+  web = spawn(process.execPath, ["../../node_modules/next/dist/bin/next", "start", "-p", String(webPort), "-H", "127.0.0.1"], {
     cwd: new URL("../../apps/web/", import.meta.url),
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -49,8 +52,8 @@ before(async () => {
     stream.on("data", (chunk) => { webOutput = (webOutput + chunk).slice(-4000); });
   await until(async () => {
     if (web.exitCode !== null) throw new Error(`Next exited: ${webOutput}`);
-    return (await fetch("http://localhost:3000/")).ok;
-  }, "Next on port 3000", 30000);
+    return (await fetch(`http://127.0.0.1:${webPort}/`)).ok;
+  }, `Next on port ${webPort}`, 30000);
   await browser.start();
 });
 
@@ -237,5 +240,29 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
       const message = `${await browser.text(".terminal-hint")} ${await browser.text(".console-gate")}`;
       return /disconnected|connection was lost/i.test(message);
     }, "serial disconnect");
+    await clickButton("Reconnect", ".console-gate");
+    await until(() => fake.serialSockets.size === 1, "serial reconnect");
+    await until(async () => (await browser.text(".terminal-hint")).includes("Connected"), "reconnected serial hint");
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length, 2);
+    await browser.navigate(`/terminal/${SOURCE_ID}`);
+    await until(() => fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length === 3, "serial after direct page reload");
+    await until(async () => (await browser.text(".terminal-hint")).includes("Connected"), "serial after direct page reload hint");
+    fake.vms.get(SOURCE_ID).capabilities.serial = false;
+    await browser.navigate(`/terminal/${SOURCE_ID}`);
+    await until(async () => (await browser.text(".console-gate")).includes("no supported serial console"), "unsupported serial after direct reload");
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "serial").length, 3);
+  });
+
+  await t.test("unsupported display gate and VNC upgrade on a direct page load", async () => {
+    await prepare();
+    fake.vms.get(SOURCE_ID).status = "running";
+    fake.vms.get(SOURCE_ID).capabilities.display = false;
+    await browser.navigate(`/vnc/${SOURCE_ID}`);
+    await until(async () => (await browser.text(".console-gate")).includes("no supported display console"), "unsupported VNC gate");
+    assert.equal(fake.upgrades.length, 0);
+    fake.vms.get(SOURCE_ID).capabilities.display = true;
+    await clickButton("Refresh status", ".console-gate");
+    await until(() => fake.upgrades.some((upgrade) => upgrade.kind === "vnc"), "VNC WebSocket upgrade");
+    assert.equal(fake.upgrades.filter((upgrade) => upgrade.kind === "vnc").length, 1);
   });
 });

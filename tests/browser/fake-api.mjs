@@ -15,9 +15,15 @@ const source = () => ({
 });
 
 export class FakeApi {
-  constructor() { this.reset(); }
+  constructor(port = Number(process.env.BROWSER_API_PORT || 3001), webPort = Number(process.env.BROWSER_WEB_PORT || 3000)) {
+    this.port = port;
+    this.webOrigin = `http://127.0.0.1:${webPort}`;
+    this.reset();
+  }
 
   reset() {
+    for (const socket of this.serialSockets || []) socket.destroy();
+    for (const socket of this.vncSockets || []) socket.destroy();
     this.vms = new Map([[SOURCE_ID, source()]]);
     this.jobs = new Map();
     this.jobFailures = new Map();
@@ -26,6 +32,8 @@ export class FakeApi {
     this.requests = [];
     this.sequence = 0;
     this.serialSockets = new Set();
+    this.vncSockets = new Set();
+    this.upgrades = [];
   }
 
   async start() {
@@ -33,12 +41,14 @@ export class FakeApi {
     this.server.on("upgrade", (request, socket) => this.upgrade(request, socket));
     await new Promise((resolve, reject) => {
       this.server.once("error", reject);
-      this.server.listen(3001, "127.0.0.1", resolve);
+      this.server.listen(this.port, "127.0.0.1", resolve);
     });
   }
 
   async close() {
     this.closeSerial();
+    for (const socket of this.vncSockets) socket.destroy();
+    this.vncSockets.clear();
     if (this.server) await new Promise((resolve) => this.server.close(resolve));
   }
 
@@ -52,16 +62,20 @@ export class FakeApi {
   }
 
   upgrade(request, socket) {
-    const url = new URL(request.url, "http://127.0.0.1:3001");
-    if (url.pathname !== "/" || url.searchParams.get("token") !== API_KEY ||
+    const url = new URL(request.url, `http://127.0.0.1:${this.port}`);
+    const kind = ["/", "/ws/serial"].includes(url.pathname) ? "serial"
+      : ["/vnc", "/ws/vnc"].includes(url.pathname) ? "vnc" : null;
+    if (!kind || url.searchParams.get("token") !== API_KEY ||
         !this.vms.has(url.searchParams.get("vmUUID"))) return socket.destroy();
     const accept = createHash("sha1")
       .update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
       .digest("base64");
     socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    this.serialSockets.add(socket);
-    socket.on("close", () => this.serialSockets.delete(socket));
+    const sockets = kind === "vnc" ? this.vncSockets : this.serialSockets;
+    this.upgrades.push({ kind, path: url.pathname, host: request.headers.host, origin: request.headers.origin });
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
   }
 
   finish(jobId, state = "succeeded") {
@@ -93,14 +107,14 @@ export class FakeApi {
 
   async handle(request, response) {
     const origin = request.headers.origin;
-    if (origin === "http://localhost:3000") {
+    if (origin === this.webOrigin) {
       response.setHeader("Access-Control-Allow-Origin", origin);
       response.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     }
     response.setHeader("Content-Type", "application/json");
     if (request.method === "OPTIONS") return this.reply(response, 204);
-    const path = new URL(request.url, "http://127.0.0.1:3001").pathname;
+    const path = new URL(request.url, `http://127.0.0.1:${this.port}`).pathname;
     this.requests.push({ method: request.method, path, auth: request.headers.authorization });
     if (request.headers.authorization !== `Bearer ${API_KEY}`)
       return this.reply(response, 401, { error: { code: "unauthorized", message: "Invalid API key" } });

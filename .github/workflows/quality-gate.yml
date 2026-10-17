@@ -1,0 +1,35 @@
+name: Pull request quality gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - name: Find runner Chrome
+        shell: bash
+        run: |
+          chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+          if [[ ! -x "$chrome" ]]; then
+            echo 'Google Chrome was not found on the macOS runner' >&2
+            exit 1
+          fi
+          echo "CHROME_PATH=$chrome" >> "$GITHUB_ENV"
+          "$chrome" --version
+      - run: npm run test:browser

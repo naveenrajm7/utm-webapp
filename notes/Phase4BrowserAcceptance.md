@@ -1,5 +1,8 @@
 # Phase 4 browser acceptance
 
+For the configurable-port pull request gate and the separate manual live
+checklist, see [Phase5CiAcceptance.md](Phase5CiAcceptance.md).
+
 ## Repeatable fake-backed suite
 
 From the repository root, run:
@@ -12,22 +15,25 @@ npm test
 npm run test:browser
 ```
 
-`test:browser` starts the production Next.js build on `localhost:3000`, a
-deterministic fake `/v1` API on `127.0.0.1:3001`, and an isolated headless
-Google Chrome profile. The suite fails if either port is unavailable. Set
-`CHROME_PATH` to another Chrome executable if needed. It uses Node's built-in
-test runner and DevTools protocol, so it adds no package dependency or
-lockfile change. The fake records mutations and completes jobs only when the
-test directs it to. No request reaches UTM.
+`test:browser` builds and starts the production Next.js app, a deterministic
+fake `/v1` API, and an isolated headless Google Chrome profile. It chooses
+available loopback ports, or accepts `BROWSER_WEB_PORT` and
+`BROWSER_API_PORT` when explicit ports are needed. Set `CHROME_PATH` to
+another Chrome executable if needed. It uses Node's built-in test runner and
+DevTools protocol, so it adds no package dependency or lockfile change. The
+fake records mutations and completes jobs only when the test directs it to.
+No request reaches UTM. The Phase 5 addition also exercises the injectable
+production one-origin runtime when that runtime is present.
 
 The browser checks API-key unlock, rejection and relock, inventory and detail
 readback, start/force-stop jobs, clone/settings/delete request bodies and
 confirmation, same-tab reload during clone and delete jobs, preservation of a
 single job ID without duplicate mutation, terminal `unknown` and missing-job
 404 outcomes, retry after a transient 503 job poll, and
-stopped/unsupported/connected/disconnected serial-console states. The live
-VNC handshake is outside this fake suite; its stopped display gate and
-disabled launch control are checked.
+stopped/unsupported/connected/disconnected/reconnected serial-console states,
+direct console page reloads, unsupported display, and a fake VNC WebSocket
+upgrade. The live VNC handshake remains a separate manual check; the stopped
+display gate and disabled launch control are also checked.
 
 ## Baseline results (2026-10-14)
 
