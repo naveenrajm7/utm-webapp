@@ -65,13 +65,18 @@ export class FakeApi {
     const url = new URL(request.url, `http://127.0.0.1:${this.port}`);
     const kind = ["/", "/ws/serial"].includes(url.pathname) ? "serial"
       : ["/vnc", "/ws/vnc"].includes(url.pathname) ? "vnc" : null;
-    if (!kind || url.searchParams.get("token") !== API_KEY ||
+    const offered = String(request.headers["sec-websocket-protocol"] || "").split(",").map(value => value.trim());
+    const auth = offered.find(value => value.startsWith("utm-auth."));
+    const presented = auth ? Buffer.from(auth.slice("utm-auth.".length), "base64url").toString("utf8") : "";
+    if (!kind || presented !== API_KEY || url.searchParams.has("token") ||
         !this.vms.has(url.searchParams.get("vmUUID"))) return socket.destroy();
     const accept = createHash("sha1")
       .update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
       .digest("base64");
+    const protocol = offered.includes("binary") ? "Sec-WebSocket-Protocol: binary\r\n"
+      : offered.includes("utm-auth") ? "Sec-WebSocket-Protocol: utm-auth\r\n" : "";
     socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
-      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
+      `Sec-WebSocket-Accept: ${accept}\r\n${protocol}\r\n`);
     const sockets = kind === "vnc" ? this.vncSockets : this.serialSockets;
     this.upgrades.push({ kind, path: url.pathname, host: request.headers.host, origin: request.headers.origin });
     sockets.add(socket);

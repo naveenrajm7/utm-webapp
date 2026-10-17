@@ -63,10 +63,19 @@ export const getAuthenticatedWebSocketUrl = (
     url.searchParams.set(name, value);
   }
 
+  return url.toString();
+};
+
+/** Browser WebSocket APIs cannot set Authorization headers; carry the key in a handshake subprotocol. */
+export const getWebSocketProtocols = (includeBinary = false): string[] => {
+  const protocols = includeBinary ? ["binary"] : [];
   const key = getApiKey();
   if (key) {
-    url.searchParams.set("token", key);
+    protocols.push("utm-auth");
+    const bytes = new TextEncoder().encode(key);
+    let binary = "";
+    bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+    protocols.push(`utm-auth.${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`);
   }
-
-  return url.toString();
+  return protocols;
 };

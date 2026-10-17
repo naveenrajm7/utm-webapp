@@ -4,6 +4,7 @@ const isDemo = process.env.NEXT_PUBLIC_DEMO === "1";
 module.exports = {
   reactStrictMode: true,
   transpilePackages: ["@repo/ui"],
+  ...(!isDemo ? { output: "standalone" } : {}),
   ...(isDemo
     ? {
         // GitHub Pages serves static files from /<repository>/.

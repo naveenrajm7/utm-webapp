@@ -51,15 +51,28 @@ export const presentedKeyFromHeaders = (
 
 export const presentedKeyFromRequest = (
   req: IncomingMessage,
-  url?: URL,
+  _url?: URL,
 ): string | undefined => {
   const fromHeaders = presentedKeyFromHeaders(req.headers);
   if (fromHeaders) {
     return fromHeaders;
   }
 
-  const token = url?.searchParams.get("token")?.trim();
-  return token ? token : undefined;
+  // Browser WebSocket cannot set Authorization. The key is offered as an
+  // encoded handshake subprotocol so it never appears in the request URL.
+  const offeredProtocols = req.headers["sec-websocket-protocol"];
+  if (typeof offeredProtocols === "string") {
+    const auth = offeredProtocols.split(",").map(value => value.trim())
+      .find(value => value.startsWith("utm-auth."));
+    if (auth) {
+      try {
+        const encoded = auth.slice("utm-auth.".length).replace(/-/g, "+").replace(/_/g, "/");
+        return Buffer.from(encoded, "base64").toString("utf8");
+      } catch { return undefined; }
+    }
+  }
+
+  return undefined;
 };
 
 export const isAuthorizedRequest = (req: IncomingMessage, url?: URL): boolean => {

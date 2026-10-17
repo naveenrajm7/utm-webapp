@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { apiFetch, getAuthenticatedWebSocketUrl, setApiKey } from "./apiAuth";
+import { apiFetch, getAuthenticatedWebSocketUrl, getWebSocketProtocols, setApiKey } from "./apiAuth";
 
 describe("production browser URLs", () => {
   const originalApiHost = process.env.NEXT_PUBLIC_API_HOST;
@@ -32,8 +32,13 @@ describe("production browser URLs", () => {
     expect(path).toBe("/v1/vms");
     expect(new Headers(options.headers).get("Authorization")).toBe("Bearer local-key");
     expect(getAuthenticatedWebSocketUrl("/ws/serial", { vmUUID: "vm-id" }))
-      .toBe("ws://127.0.0.1:45678/ws/serial?vmUUID=vm-id&token=local-key");
+      .toBe("ws://127.0.0.1:45678/ws/serial?vmUUID=vm-id");
     expect(getAuthenticatedWebSocketUrl("/ws/vnc", { vmUUID: "vm-id" }))
-      .toBe("ws://127.0.0.1:45678/ws/vnc?vmUUID=vm-id&token=local-key");
+      .toBe("ws://127.0.0.1:45678/ws/vnc?vmUUID=vm-id");
+    expect(getWebSocketProtocols()).toHaveLength(2);
+    expect(getWebSocketProtocols()[0]).toBe("utm-auth");
+    expect(getWebSocketProtocols(true)[0]).toBe("binary");
+    expect(getWebSocketProtocols(true)[1]).toBe("utm-auth");
+    expect(getWebSocketProtocols(true)[2]).toMatch(/^utm-auth\./);
   });
 });

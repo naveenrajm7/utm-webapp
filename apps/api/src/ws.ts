@@ -193,9 +193,7 @@ export const handleWebSocketConnection = async (
   if (
     !isValidUuid(vmUUID) ||
     url.searchParams.getAll("vmUUID").length !== 1 ||
-    [...url.searchParams.keys()].some(
-      (key) => key !== "vmUUID" && key !== "token",
-    )
+    [...url.searchParams.keys()].some((key) => key !== "vmUUID")
   ) {
     ws.close(1008, "invalid VM ID");
     return;
@@ -221,7 +219,7 @@ export const attachWebSocketServer = (
     ...(mode === "single-origin" ? { noServer: true } : { server }),
     maxPayload: 1024 * 1024,
     handleProtocols: (protocols: Set<string>) =>
-      protocols.has("binary") ? "binary" : false,
+      protocols.has("binary") ? "binary" : protocols.has("utm-auth") ? "utm-auth" : false,
   });
 
   wss.on("connection", (ws, req) => {
@@ -254,7 +252,7 @@ export const attachWebSocketServer = (
         reject(socket, 401, "Unauthorized");
       } else if (!isValidUuid(url.searchParams.get("vmUUID")) ||
         url.searchParams.getAll("vmUUID").length !== 1 ||
-        [...url.searchParams.keys()].some(key => key !== "vmUUID" && key !== "token")) {
+        [...url.searchParams.keys()].some(key => key !== "vmUUID")) {
         reject(socket, 400, "Bad Request");
       } else {
         wss.handleUpgrade(req, socket, head, ws => wss.emit("connection", ws, req));
