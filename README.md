@@ -59,7 +59,7 @@ After a versioned release is published, install with:
 curl -fsSL https://raw.githubusercontent.com/naveenrajm7/utm-webapp/main/install.sh | bash -s -- --version v1.0.0
 ```
 
-For a locally built archive, use `./install.sh --archive /path/to/utm-web-VERSION-macos-ARCH.tar.gz`. The matching `.sha256` file must sit beside it. The installer verifies SHA-256 before extraction, retains the API key and job journal during upgrades, activates a version atomically, and restores the prior version if readiness fails. Apple Silicon (`arm64`) has been built and smoke-tested on a local Mac in this PR. Intel (`x86_64`) support remains pending the Intel GitHub Actions package job; no Intel release artifact will be published unless that bundle passes.
+For a locally built archive, use `./install.sh --archive /path/to/utm-web-VERSION-macos-ARCH.tar.gz`. The matching `.sha256` file must sit beside it. The installer verifies SHA-256 before extraction, retains the API key and job journal during upgrades, activates a version atomically, and restores the prior version if readiness fails. Apple Silicon (`arm64`) and Intel (`x86_64`) Node/native bundles both passed the pull request’s GitHub-hosted build and install smoke jobs.
 
 The service runs as a LaunchAgent in the logged-in user's session on `127.0.0.1:3000`. Open `http://127.0.0.1:3000`; retrieve the unlock key with `cat "$HOME/Library/Application Support/UTM Web/api-key"`. The key file is mode 0600 and is never included in release files or process arguments. Manage it with:
 
@@ -72,4 +72,4 @@ tail -f "$HOME/Library/Application Support/UTM Web/server.log" # logs
 ./install.sh --uninstall --purge-data                 # delete user data too
 ```
 
-To validate package assembly locally on a Mac, run `ARCH=$(uname -m) OUT_DIR="$PWD/release-out" ./scripts/build-release.sh`, then `./scripts/package-smoke.sh release-out/artifacts/utm-web-*-macos-*.tar.gz`. The pull request package workflow builds and installs on GitHub-hosted Intel and Apple Silicon Macs; its simulated UTM app only satisfies prerequisite detection and it does not access a VM.
+To validate package assembly locally on a Mac, run `ARCH=$(uname -m) OUT_DIR="$PWD/release-out" ./scripts/build-release.sh`, then `./scripts/package-smoke.sh release-out/artifacts/utm-web-*-macos-*.tar.gz`. The package workflow builds and installs on GitHub-hosted Intel and Apple Silicon Macs; its simulated UTM app only satisfies prerequisite detection and it does not access a VM.
