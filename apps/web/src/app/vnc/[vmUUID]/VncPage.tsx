@@ -7,7 +7,7 @@ import { getAuthenticatedWebSocketUrl } from '../../apiAuth';
 import ConsoleGate from '../../components/ConsoleGate';
 
 const AuthenticatedVnc = ({ vmUUID }: { vmUUID: string }) => {
-  const vncUrl = getAuthenticatedWebSocketUrl("/vnc", { vmUUID });
+  const vncUrl = getAuthenticatedWebSocketUrl("/ws/vnc", { vmUUID });
 
   return (
     <div style={{ width: '100vw', height: '100vh' }}>

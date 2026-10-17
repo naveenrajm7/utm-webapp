@@ -1,3 +1,5 @@
+import type { IncomingMessage } from "node:http";
+
 /** Explicit configuration limits access to one origin; defaults cover both browser loopback names. */
 export const configuredWebOrigins = (): string[] => {
   const value = process.env.UTM_WEB_ORIGIN;
@@ -23,6 +25,23 @@ export const isAllowedWebOrigin = (origin: string | undefined): boolean =>
 
 export const isAllowedWebSocketOrigin = (origin: string | undefined): boolean =>
   origin === undefined || isAllowedWebOrigin(origin);
+
+/** Browser console upgrades must come from the exact origin of this listener. */
+export const isSameOriginWebSocket = (req: IncomingMessage): boolean => {
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (!origin || !host) return false;
+  try {
+    const url = new URL(origin);
+    return url.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) &&
+      url.host.toLowerCase() === host.toLowerCase() &&
+      url.pathname === "/" && !url.search && !url.hash &&
+      Number(url.port || 80) === req.socket.localPort;
+  } catch {
+    return false;
+  }
+};
 
 export const configuredApiHost = (): string => {
   const host = process.env.HOST || "127.0.0.1";
