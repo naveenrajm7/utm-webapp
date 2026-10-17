@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IS_DEMO } from "../demo";
 import DemoDisplay from "../demo/DemoDisplay";
+import { getWebSocketProtocols } from "../apiAuth";
 
 interface VNCViewerProps {
   url: string;
@@ -52,6 +53,7 @@ export const LiveVNCViewer = ({ url, onDisconnect }: VNCViewerProps) => {
           rfb = new module.default(vncContainerRef.current, url, {
             scaleViewport: true,
             resizeSession: false,
+            wsProtocols: getWebSocketProtocols(true),
           });
           rfb.addEventListener("connect", connected);
           rfb.addEventListener("disconnect", disconnected);

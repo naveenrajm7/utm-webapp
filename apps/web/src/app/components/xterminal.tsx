@@ -4,7 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
-import { getAuthenticatedWebSocketUrl } from "../apiAuth";
+import { getAuthenticatedWebSocketUrl, getWebSocketProtocols } from "../apiAuth";
 import { IS_DEMO } from "../demo";
 
 interface XTerminalProps {
@@ -79,7 +79,7 @@ function XTerminal({ vmUUID, onDisconnect }: XTerminalProps) {
     };
 
     try {
-      ws = new WebSocket(getAuthenticatedWebSocketUrl("/ws/serial", { vmUUID }));
+      ws = new WebSocket(getAuthenticatedWebSocketUrl("/ws/serial", { vmUUID }), getWebSocketProtocols());
     } catch {
       fail();
     }

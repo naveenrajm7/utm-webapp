@@ -10,6 +10,8 @@ import { configuredApiHost } from "../webOrigin";
 
 const TEST_KEY = "test-api-key";
 const VM_ID = "12345678-1234-1234-1234-123456789abc";
+const wsAuth = (binary = false) => ["utm-auth", `utm-auth.${Buffer.from(TEST_KEY).toString("base64url")}`,
+  ...(binary ? ["binary"] : [])];
 const unusedConsole = {
   getSerialDevice: async () => { throw new Error("Unexpected serial lookup"); },
   getVncTarget: async () => { throw new Error("Unexpected VNC lookup"); },
@@ -217,7 +219,7 @@ describe("server", () => {
         "/vnc?vmUUID=12345678-1234-1234-1234-123456789abc&extra=1",
       ]) {
         const ws = new WebSocket(
-          `ws://127.0.0.1:${port}${path}&token=${TEST_KEY}`,
+          `ws://127.0.0.1:${port}${path}`,
         );
         const code = await new Promise<number>((resolve, reject) => {
           const timer = setTimeout(
@@ -250,16 +252,14 @@ describe("server", () => {
     const { port } = server.address() as AddressInfo;
     try {
       for (const origin of ["http://localhost:3000", "http://127.0.0.1:3000"]) {
-        const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}&token=${TEST_KEY}`, { origin });
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}`, wsAuth(), { origin });
         const messages: string[] = [];
         ws.on("message", data => messages.push(data.toString()));
         await closed(ws);
         expect(messages.join(" ")).toContain("console unavailable");
         expect(messages.join(" ")).not.toContain("/private/");
       }
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
-        origin: "http://other.example",
-      });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}`, wsAuth(), { origin: "http://other.example" });
       expect(await closed(ws)).toBe(1008);
       expect(calls).toHaveLength(2);
     } finally {
@@ -277,17 +277,13 @@ describe("server", () => {
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     try {
-      const serial = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
-        origin: "http://localhost:3000",
-      });
+      const serial = new WebSocket(`ws://127.0.0.1:${port}/?vmUUID=${VM_ID}`, wsAuth(), { origin: "http://localhost:3000" });
       const messages: string[] = [];
       serial.on("message", data => messages.push(data.toString()));
       await closed(serial);
       expect(messages.join(" ")).toContain("console unavailable");
 
-      const vnc = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
-        origin: "http://localhost:3000",
-      });
+      const vnc = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}`, wsAuth(true), { origin: "http://localhost:3000" });
       expect(await closed(vnc)).toBe(1011);
       expect(calls).toEqual([`serial:${VM_ID}`, `vnc:${VM_ID}`]);
     } finally {
@@ -304,9 +300,7 @@ describe("server", () => {
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     try {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
-        origin: "http://localhost:3000",
-      });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}`, wsAuth(true), { origin: "http://localhost:3000" });
       expect(await closed(ws)).toBe(1011);
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
@@ -327,9 +321,7 @@ describe("server", () => {
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const { port } = server.address() as AddressInfo;
     try {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}&token=${TEST_KEY}`, {
-        origin: "http://localhost:3000",
-      });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/vnc?vmUUID=${VM_ID}`, wsAuth(true), { origin: "http://localhost:3000" });
       await new Promise<void>(resolve => ws.on("open", resolve));
       ws.send(Buffer.from([1, 2, 3]));
       await new Promise<void>((resolve, reject) => {
