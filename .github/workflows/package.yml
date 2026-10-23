@@ -1,0 +1,51 @@
+name: macOS release package
+on:
+  pull_request:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PACKAGE_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('ci-{0}', github.run_id) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - run: npm ci
+      - name: Build versioned package
+        run: VERSION=$PACKAGE_VERSION ARCH=${{ matrix.arch }} OUT_DIR=$RUNNER_TEMP/release ./scripts/build-release.sh
+      - name: Install and smoke-test local archive
+        run: ./scripts/package-smoke.sh "$RUNNER_TEMP/release/artifacts/utm-web-${PACKAGE_VERSION}-macos-${{ matrix.arch }}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: utm-web-${{ env.PACKAGE_VERSION }}-macos-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release/artifacts/*
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: utm-web-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release/*

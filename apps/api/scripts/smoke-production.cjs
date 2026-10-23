@@ -23,8 +23,10 @@ const adapter = {
   getSerialDevice: unavailable, getVncTarget: unavailable,
 };
 
-const closedConsole = (url, origin) => new Promise((resolve, reject) => {
-  const ws = new WebSocket(url, { origin });
+const closedConsole = (url, origin, binary = false) => new Promise((resolve, reject) => {
+  const protocols = ["utm-auth", `utm-auth.${Buffer.from(process.env.UTM_API_KEY).toString("base64url")}`];
+  if (binary) protocols.unshift("binary");
+  const ws = new WebSocket(url, protocols, { origin });
   const messages = [];
   const timer = setTimeout(() => { ws.terminate(); reject(new Error("console timeout")); }, 5000);
   ws.on("message", data => messages.push(data.toString()));
@@ -68,10 +70,10 @@ const main = async () => {
       headers: { Authorization: `Bearer ${key}` },
     })).status, 404);
     const wsOrigin = origin.replace(/^http:/, "ws:");
-    const query = `?vmUUID=${id}&token=${key}`;
+    const query = `?vmUUID=${id}`;
     const serial = await closedConsole(`${wsOrigin}/ws/serial${query}`, origin);
     assert.match(serial.messages.join(" "), /console unavailable/);
-    const vnc = await closedConsole(`${wsOrigin}/ws/vnc${query}`, origin);
+    const vnc = await closedConsole(`${wsOrigin}/ws/vnc${query}`, origin, true);
     assert.equal(vnc.code, 1011);
     console.log("build asset, static isolation, REST, serial and VNC: passed");
   } finally {

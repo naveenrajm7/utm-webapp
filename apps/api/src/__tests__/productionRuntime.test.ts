@@ -12,6 +12,8 @@ import type { InjectableAdapter } from "../localRuntime";
 
 const KEY = "fake-production-key";
 const ID = "12345678-1234-1234-1234-123456789abc";
+const wsAuth = (binary = false) => ["utm-auth", `utm-auth.${Buffer.from(KEY).toString("base64url")}`,
+  ...(binary ? ["binary"] : [])];
 const vm: Vm = {
   id: ID, name: "Fake VM", status: "started", backend: "qemu", network: "offline",
   capabilities: { clone: false, configure: false, start: false, stop: true,
@@ -30,9 +32,9 @@ const html: RequestListener = (req, res) => {
   }
 };
 
-const upgradeStatus = (url: string, origin?: string): Promise<number> =>
+const upgradeStatus = (url: string, origin?: string, authorized = true): Promise<number> =>
   new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, origin ? { origin } : undefined);
+    const ws = new WebSocket(url, authorized ? wsAuth(url.includes("/vnc")) : [], origin ? { origin } : undefined);
     const timer = setTimeout(() => { ws.terminate(); reject(new Error("upgrade timed out")); }, 5000);
     ws.once("unexpected-response", (_req, response) => {
       clearTimeout(timer);
@@ -45,7 +47,7 @@ const upgradeStatus = (url: string, origin?: string): Promise<number> =>
 
 const unavailableConsole = (url: string, origin: string): Promise<{ code: number; messages: string[] }> =>
   new Promise((resolve, reject) => {
-    const ws = new WebSocket(url, { origin });
+    const ws = new WebSocket(url, wsAuth(url.includes("/vnc")), { origin });
     const messages: string[] = [];
     const timer = setTimeout(() => { ws.terminate(); reject(new Error("console did not close")); }, 5000);
     ws.on("message", data => messages.push(data.toString()));
@@ -119,7 +121,7 @@ describe("single origin production runtime with a fake adapter", () => {
   it("uses only console upgrade paths and enforces the listener origin", async () => {
     const origin = `http://127.0.0.1:${port}`;
     const base = `ws://127.0.0.1:${port}`;
-    const query = `?vmUUID=${ID}&token=${KEY}`;
+    const query = `?vmUUID=${ID}`;
     const serial = await unavailableConsole(`${base}/ws/serial${query}`, origin);
     expect(serial.messages.join(" ")).toContain("console unavailable");
     const vnc = await unavailableConsole(`${base}/ws/vnc${query}`, origin);
@@ -129,8 +131,8 @@ describe("single origin production runtime with a fake adapter", () => {
     expect(await upgradeStatus(`${base}/${query}`, origin)).toBe(404);
     expect(await upgradeStatus(`${base}/ws/serial${query}`, "http://other.example")).toBe(403);
     expect(await upgradeStatus(`${base}/ws/vnc${query}`)).toBe(403);
-    expect(await upgradeStatus(`${base}/ws/vnc?vmUUID=${ID}`, origin)).toBe(401);
-    expect(await upgradeStatus(`${base}/ws/vnc?vmUUID=invalid&token=${KEY}`, origin)).toBe(400);
+    expect(await upgradeStatus(`${base}/ws/vnc?vmUUID=${ID}`, origin, false)).toBe(401);
+    expect(await upgradeStatus(`${base}/ws/vnc?vmUUID=invalid`, origin)).toBe(400);
     expect(lookups).toHaveLength(2);
   });
 });

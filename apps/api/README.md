@@ -20,9 +20,10 @@ returns an HTTP server before it listens, so a test can use
 optional `webHandler` to replace Next for an API-only integration test; omit it
 to test the actual built UI. Both forms keep the injected adapter and job
 journal in the same process. Browser console clients use
-`/ws/serial?vmUUID=<UUID>&token=<key>` and
-`/ws/vnc?vmUUID=<UUID>&token=<key>` on the page origin. Production upgrades
-require an `Origin` matching that exact loopback listener.
+`/ws/serial?vmUUID=<UUID>` and `/ws/vnc?vmUUID=<UUID>` on the page origin.
+Browser WebSockets authenticate with an encoded `utm-auth` handshake
+subprotocol; the API key is not placed in a URL. Production upgrades require an
+`Origin` matching that exact loopback listener.
 After `npm run build`, `npm run smoke:production --workspace=api` runs the
 built Next app and an unsupported-console fake adapter on a free loopback
 port. It verifies direct page reloads, a build asset, static isolation,
