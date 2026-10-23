@@ -60,10 +60,13 @@ if ! launchctl bootstrap "gui/$(id -u)" "$PLIST"; then
   exit 1
 fi
 for _ in {1..30}; do
-  if [[ -f "$DATA/runtime-version" && "$(cat "$DATA/runtime-version")" == "$ART_VERSION" ]] && curl -fsS http://127.0.0.1:3000/status >/dev/null 2>&1; then
-    echo "UTM Web installed. Open http://127.0.0.1:3000"
-    echo "Retrieve key: cat '$DATA/api-key'"
-    exit 0
+  if [[ -f "$DATA/runtime-version" && "$(cat "$DATA/runtime-version")" == "$ART_VERSION" ]]; then
+    PROBE_STATUS=$(printf 'header = "x-api-key: %s"\n' "$(cat "$DATA/api-key")" | curl --config - --silent --max-time 2 --output "$TMP/probe-response" --write-out '%{http_code}' http://127.0.0.1:3000/v1/jobs/utmweb_install_probe 2>/dev/null || true)
+    if [[ "$PROBE_STATUS" == 404 ]] && grep -Fqx '{"error":{"code":"not_found","message":"Job not found"}}' "$TMP/probe-response"; then
+      echo "UTM Web installed. Open http://127.0.0.1:3000"
+      echo "Retrieve key: cat '$DATA/api-key'"
+      exit 0
+    fi
   fi
   sleep 1
 done

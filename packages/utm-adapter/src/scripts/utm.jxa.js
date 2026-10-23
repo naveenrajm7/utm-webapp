@@ -1,7 +1,7 @@
 // Fixed JXA entrypoints. All values are data passed as separate osascript argv entries.
 function run(argv) {
   const action = argv[0];
-  const utm = Application("UTM");
+  const utm = Application("/Applications/UTM.app");
   const find = function (id) {
     const vm = utm.virtualMachines().find(function (candidate) { return candidate.id().toLowerCase() === id.toLowerCase(); });
     if (!vm) throw new Error("VM_NOT_FOUND");

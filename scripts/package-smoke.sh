@@ -55,7 +55,26 @@ done
 curl -fsS http://127.0.0.1:3000/ >/dev/null
 launchctl kickstart -k "gui/$(id -u)/com.utmweb.server"
 launchctl print "gui/$(id -u)/com.utmweb.server" >/dev/null
+cp "$RUNTIME/node/node" "$TMP/node"
 "$ROOT/install.sh" --uninstall
 [[ -f "$HOME/Library/Application Support/UTM Web/api-key" ]]
 "$ROOT/install.sh" --uninstall --purge-data
-printf 'local archive install, UI, auth, node-pty, adapter payload, reinstall, rollback, LaunchAgent, uninstall: passed\n'
+"$TMP/node" -e 'require("http").createServer((req,res)=>{res.writeHead(200);res.end("unrelated service")}).listen(3000,"127.0.0.1")' &
+FAKE_PID=$!
+trap 'kill "$FAKE_PID" 2>/dev/null || true; rm -rf "$TMP"' EXIT
+for _ in {1..30}; do
+  if [[ "$(curl -fsS --max-time 1 http://127.0.0.1:3000/status 2>/dev/null || true)" == 'unrelated service' ]]; then break; fi
+  sleep 1
+done
+[[ "$(curl -fsS --max-time 1 http://127.0.0.1:3000/status)" == 'unrelated service' ]]
+if "$ROOT/install.sh" --archive "$ARCHIVE" > "$TMP/occupied-port.log" 2>&1; then
+  cat "$TMP/occupied-port.log" >&2
+  echo 'Installer accepted an unrelated service on port 3000.' >&2
+  exit 1
+fi
+grep -Fq 'failed readiness check' "$TMP/occupied-port.log"
+"$ROOT/install.sh" --uninstall --purge-data
+kill "$FAKE_PID" 2>/dev/null || true
+wait "$FAKE_PID" 2>/dev/null || true
+FAKE_PID=''
+printf 'local archive install, UI, auth, node-pty, adapter payload, reinstall, rollback, LaunchAgent, uninstall, occupied-port rejection: passed\n'
