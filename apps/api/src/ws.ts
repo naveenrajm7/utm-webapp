@@ -1,3 +1,4 @@
+import type { AdminAuth } from "./adminAuth";
 import { execFile } from "child_process";
 import type { IncomingMessage, Server as HttpServer } from "http";
 import net from "net";
@@ -163,6 +164,7 @@ export const handleWebSocketConnection = async (
   req: IncomingMessage,
   resolver: ConsoleResolver,
   mode: WebSocketMode = "development",
+  auth?: AdminAuth,
 ) => {
   let url: URL;
   try {
@@ -172,7 +174,7 @@ export const handleWebSocketConnection = async (
     return;
   }
 
-  if (!isAuthorizedRequest(req, url)) {
+  if (!(auth ? auth.session(req) : isAuthorizedRequest(req, url))) {
     ws.close(1008, "unauthorized");
     return;
   }
@@ -213,17 +215,38 @@ export const attachWebSocketServer = (
   server: HttpServer,
   resolver: ConsoleResolver,
   mode: WebSocketMode = "development",
+  auth?: AdminAuth,
 ): WebSocketServer => {
   // noVNC asks for the "binary" subprotocol, so accept it.
   const wss = new WebSocketServer({
-    ...(mode === "single-origin" ? { noServer: true } : { server }),
+    ...((mode === "single-origin" || auth) ? { noServer: true } : { server }),
     maxPayload: 1024 * 1024,
     handleProtocols: (protocols: Set<string>) =>
       protocols.has("binary") ? "binary" : protocols.has("utm-auth") ? "utm-auth" : false,
   });
 
   wss.on("connection", (ws, req) => {
-    void handleWebSocketConnection(ws, req, resolver, mode).catch((error: unknown) => {
+    if (auth) {
+      const session = auth.session(req);
+      if (!session) { ws.close(1008, "unauthorized"); return; }
+      const revoke = (tokenHash: string) => {
+        if (tokenHash === session.tokenHash) ws.close(1008, "logged out");
+      };
+      const shutdown = () => ws.close(1001, "server shutdown");
+      // Recheck persistent sessions so expiry and eviction also close active consoles.
+      const timer = setInterval(() => {
+        if (!auth.session(req)) ws.close(1008, "session expired");
+      }, 1000);
+      timer.unref();
+      auth.on("revoked", revoke);
+      auth.on("shutdown", shutdown);
+      ws.once("close", () => {
+        clearInterval(timer);
+        auth.off("revoked", revoke);
+        auth.off("shutdown", shutdown);
+      });
+    }
+    void handleWebSocketConnection(ws, req, resolver, mode, auth).catch((error: unknown) => {
       log(
         `WebSocket bridge failed: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -232,7 +255,7 @@ export const attachWebSocketServer = (
     });
   });
 
-  if (mode === "single-origin") {
+  if (mode === "single-origin" || auth) {
     const reject = (socket: Duplex, status: number, message: string) => {
       socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
     };
@@ -246,9 +269,9 @@ export const attachWebSocketServer = (
       }
       if (!consolePath(url.pathname, mode)) {
         reject(socket, 404, "Not Found");
-      } else if (!isSameOriginWebSocket(req)) {
+      } else if (mode === "single-origin" ? !isSameOriginWebSocket(req) : !req.headers.origin || !isAllowedWebSocketOrigin(req.headers.origin)) {
         reject(socket, 403, "Forbidden");
-      } else if (!isAuthorizedRequest(req, url)) {
+      } else if (!(auth ? auth.session(req) : isAuthorizedRequest(req, url))) {
         reject(socket, 401, "Unauthorized");
       } else if (!isValidUuid(url.searchParams.get("vmUUID")) ||
         url.searchParams.getAll("vmUUID").length !== 1 ||

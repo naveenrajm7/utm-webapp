@@ -65,6 +65,7 @@ async function clickButton(label, scope = "") {
 
 before(async () => {
   temp = await mkdtemp(join(tmpdir(), "utm-one-origin-acceptance-"));
+  process.env.UTM_AUTH_MODE = "api-key";
   process.env.UTM_API_KEY = API_KEY;
   process.env.UTM_API_JOB_JOURNAL_PATH = join(temp, "jobs.json");
   vncTarget = createServer((socket) => {

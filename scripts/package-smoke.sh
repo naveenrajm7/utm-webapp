@@ -16,6 +16,7 @@ RUNTIME="$HOME/Applications/UTM Web/current/runtime"
 test -x "$RUNTIME/node/node"
 test -f "$RUNTIME/packages/utm-adapter/dist/scripts/utm.jxa.js"
 test -d "$RUNTIME/apps/web/.next/static"
+"$RUNTIME/node/node" -e "const D=require('$RUNTIME/node_modules/better-sqlite3'); const db=new D(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 "$RUNTIME/node/node" -e "require('$RUNTIME/node_modules/node-pty'); console.log('node-pty native module loaded')"
 EXPECTED_ARCH="$( [ "$(uname -m)" = arm64 ] && echo arm64 || echo x64 )" "$RUNTIME/node/node" -e 'if(process.arch!==process.env.EXPECTED_ARCH)process.exit(1)'
 curl -fsS http://127.0.0.1:3000/ > "$TMP/index.html"
@@ -23,14 +24,26 @@ ASSET=$(grep -oE 'src="/_next/static/[^" ]+\.js' "$TMP/index.html" | head -1 | c
 [[ -n "$ASSET" ]]
 curl -fsS "http://127.0.0.1:3000$ASSET" >/dev/null
 KEY=$(cat "$HOME/Library/Application Support/UTM Web/api-key")
-API_CHECK=http://127.0.0.1:3000/v1/jobs/00000000-0000-0000-0000-000000000000
-code=$(curl -sS -o "$TMP/body" -w '%{http_code}' -H "Authorization: Bearer $KEY" "$API_CHECK")
-[[ "$code" == 404 ]]
+AUTH_ORIGIN=http://127.0.0.1:3000
+API_CHECK=$AUTH_ORIGIN/v1/jobs/00000000-0000-0000-0000-000000000000
+# A retained installation credential can check identity, but cannot bypass admin login.
+[[ $(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $KEY" "$API_CHECK") == 401 ]]
+curl -fsS "$AUTH_ORIGIN/auth/status" | grep -Fq '"setupRequired":true'
+SETUP_CODE=$(sed -n 's/.*UTM Web initial setup code: //p' "$HOME/Library/Application Support/UTM Web/server.log" | tail -1)
+printf '{"username":"admin","password":"package smoke password","setupCode":"%s"}' "$SETUP_CODE" > "$TMP/setup.json"
+curl -fsS -H "Origin: $AUTH_ORIGIN" -H 'X-UTM-Request: 1' -H 'Content-Type: application/json' --data-binary "@$TMP/setup.json" "$AUTH_ORIGIN/auth/setup" >/dev/null
+printf '{"username":"admin","password":"package smoke password"}' > "$TMP/login.json"
+curl -fsS -c "$TMP/cookies" -H "Origin: $AUTH_ORIGIN" -H 'X-UTM-Request: 1' -H 'Content-Type: application/json' --data-binary "@$TMP/login.json" "$AUTH_ORIGIN/auth/login" >/dev/null
+[[ $(curl -sS -b "$TMP/cookies" -o /dev/null -w '%{http_code}' "$API_CHECK") == 404 ]]
 [[ $(curl -sS -o /dev/null -w '%{http_code}' "$API_CHECK") == 401 ]]
+curl -fsS "$AUTH_ORIGIN/auth/status" | grep -Fq '"setupRequired":false'
+cp "$HOME/Library/Application Support/UTM Web/utm.sqlite" "$TMP/database.before"
 printf '{"version":1,"jobs":[]}\n' > "$HOME/Library/Application Support/UTM Web/api-jobs.json"
 cp "$HOME/Library/Application Support/UTM Web/api-key" "$TMP/key.before"
 cp "$HOME/Library/Application Support/UTM Web/api-jobs.json" "$TMP/journal.before"
 "$ROOT/install.sh" --archive "$ARCHIVE"
+cmp "$TMP/database.before" "$HOME/Library/Application Support/UTM Web/utm.sqlite"
+[[ $(curl -sS -b "$TMP/cookies" -o /dev/null -w '%{http_code}' "$API_CHECK") == 404 ]]
 cmp "$TMP/key.before" "$HOME/Library/Application Support/UTM Web/api-key"
 cmp "$TMP/journal.before" "$HOME/Library/Application Support/UTM Web/api-jobs.json"
 ACTIVE_BEFORE=$(readlink "$HOME/Applications/UTM Web/current")

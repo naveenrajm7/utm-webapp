@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": ["UTM_API_KEY"],
+  "globalPassThroughEnv": ["UTM_API_KEY", "UTM_AUTH_MODE", "UTM_DATABASE_PATH", "UTM_WEB_ORIGIN", "UTM_API_JOB_JOURNAL_PATH", "NODE_ENV"],
   "tasks": {
     "build": {
       "inputs": ["$TURBO_DEFAULT$", ".env*"],

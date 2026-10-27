@@ -16,7 +16,7 @@ The merged main branch has authenticated /v1 VM inventory, details, power jobs, 
 
 ## Local development and verification
 
-On the Mac running UTM, set UTM_API_KEY to a random secret and run npm run dev. The API listens on 127.0.0.1:3001 by default. The web app is intended for use on the same Mac during this milestone.
+On the Mac running UTM, run npm run dev, use the setup code printed by the API to create the single administrator, then log in. SQLite accounts/sessions default to ~/Library/Application Support/UTM Web/utm.sqlite; UTM_DATABASE_PATH overrides it. UTM_AUTH_MODE=api-key with UTM_API_KEY explicitly selects legacy shared-key mode. See notes/AdminAuthentication.md. The API listens on 127.0.0.1:3001 by default. The web app is intended for use on the same Mac during this milestone.
 
 API Supertest tests require permission to bind a local socket; an EPERM from a restricted sandbox is not a code failure. The named disposable VM `vagrant_test_default_1744595654130_77151` was used for live power, serial, and VNC checks on UTM 5.0.6 and as the source for adapter clone/edit/delete validation. Only newly created disposable clones were edited and deleted. Guest execution remains paused. No personal VM may be used for destructive or experimental checks.
 

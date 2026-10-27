@@ -37,6 +37,7 @@ const closedConsole = (url, origin, binary = false) => new Promise((resolve, rej
 const main = async () => {
   const directory = mkdtempSync(join(tmpdir(), "utm-production-smoke-"));
   const key = randomBytes(24).toString("hex");
+  process.env.UTM_AUTH_MODE = "api-key";
   process.env.UTM_API_KEY = key;
   process.env.UTM_API_JOB_JOURNAL_PATH = join(directory, "jobs.json");
   let server;

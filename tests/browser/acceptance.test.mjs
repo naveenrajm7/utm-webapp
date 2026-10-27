@@ -82,7 +82,7 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     assert.match(await browser.text("#panel-details"), /QEMU/);
     assert.match(await browser.text("#panel-details"), new RegExp(SOURCE_ID));
     assert.ok(fake.requests.some((request) => request.path === `/v1/vms/${SOURCE_ID}` && request.auth === `Bearer ${API_KEY}`));
-    await browser.click('[aria-label="Lock"]');
+    await browser.click('[aria-label="Log out"]');
     await until(() => browser.exists(".unlock-screen"), "lock screen");
     assert.equal(await browser.evaluate("sessionStorage.getItem('utm-api-key')"), null);
     await browser.fill('input[name="apiKey"]', API_KEY);

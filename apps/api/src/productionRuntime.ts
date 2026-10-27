@@ -1,3 +1,4 @@
+import type { AdminAuth } from "./adminAuth";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { RequestListener } from "node:http";
@@ -8,6 +9,7 @@ export interface ProductionRuntimeOptions {
   /** Inject a web handler for fake backed acceptance without starting Next. */
   webHandler?: RequestListener;
   webDirectory?: string;
+  auth?: AdminAuth;
 }
 
 /** Next owns its build assets and dynamic console pages on the same HTTP listener. */
@@ -24,9 +26,9 @@ export const createProductionRuntime = async (
     const application = next({ dev: false, dir: webDirectory });
     await application.prepare();
     webHandler = application.getRequestHandler();
-    const server = createLocalRuntime(adapter, { webHandler, singleOrigin: true });
+    const server = createLocalRuntime(adapter, { webHandler, singleOrigin: true, auth: options.auth });
     server.on("close", () => { void application.close(); });
     return server;
   }
-  return createLocalRuntime(adapter, { webHandler, singleOrigin: true });
+  return createLocalRuntime(adapter, { webHandler, singleOrigin: true, auth: options.auth });
 };

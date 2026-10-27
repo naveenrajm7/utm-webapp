@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { clearApiKey } from "../apiAuth";
+import { logout } from "../apiAuth";
 import { IS_DEMO } from "../demo";
 import { useVmList } from "../useVmList";
 import { statusLabel } from "../vm";
@@ -29,6 +29,7 @@ export default function VMManager() {
     select,
     dismissActionError,
   } = useVmList();
+  const [logoutError, setLogoutError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [wideLayout, setWideLayout] = useState(false);
@@ -171,15 +172,16 @@ export default function VMManager() {
             <button
               type="button"
               className="icon-button lock-button"
-              onClick={clearApiKey}
-              title="Lock"
-              aria-label="Lock"
+              onClick={() => { void logout().catch((error: Error) => setLogoutError(error.message)); }}
+              title="Log out"
+              aria-label="Log out"
             >
               <i className="bi bi-lock" />
             </button>
           )}
         </header>
 
+        {logoutError && <div className="action-error" role="alert">{logoutError}</div>}
         {actionError && (
           <div className="action-error" role="alert">
             <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />

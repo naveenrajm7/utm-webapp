@@ -6,6 +6,8 @@ import express, {
   type NextFunction,
 } from "express";
 import morgan from "morgan";
+import type { AdminAuth } from "./adminAuth";
+import { createAuthRouter, trustedHost, trustedOrigin } from "./authRoutes";
 import cors from "cors";
 import { isAuthorizedRequest, requireApiKey } from "./auth";
 import { createLegacyRouter } from "./routes";
@@ -15,24 +17,35 @@ import { configuredWebOrigins, isAllowedWebOrigin } from "./webOrigin";
 
 export const createServer = (
   ports: Partial<ApiPorts> = {},
-  options: { singleOrigin?: boolean } = {},
+  options: { singleOrigin?: boolean; auth?: AdminAuth } = {},
 ): Express => {
   const app = express();
   if (!options.singleOrigin) configuredWebOrigins();
+  const authorize = (req: Request, res: Response, next: NextFunction) => {
+    res.set("Cache-Control", "no-store");
+    if (!options.auth) {
+      if (req.path.startsWith("/v1")) {
+        if (!isAuthorizedRequest(req)) return res.status(401).json({ error: { code: "unauthorized", message: "Unauthorized" } });
+        return next();
+      }
+      return requireApiKey(req, res, next);
+    }
+    if (!trustedHost(req)) return res.status(403).json({ error: { code: "forbidden", message: "Invalid host" } });
+    const session = options.auth.session(req);
+    if (!session) return res.status(401).json({ error: { code: "unauthorized", message: "Please log in" } });
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+      (!trustedOrigin(req, Boolean(options.singleOrigin)) || req.get("X-UTM-CSRF") !== session.csrf))
+      return res.status(403).json({ error: { code: "forbidden", message: "Invalid session request" } });
+    return next();
+  };
   app
     .disable("x-powered-by")
     .use(morgan("dev"))
-    .use(cors({ origin: options.singleOrigin
+    .use(cors({ credentials: true, origin: options.singleOrigin
       ? false
       : (origin, callback) => callback(null, isAllowedWebOrigin(origin)) }))
-    .use("/v1", (req, res, next) => {
-      if (!isAuthorizedRequest(req)) {
-        return res
-          .status(401)
-          .json({ error: { code: "unauthorized", message: "Unauthorized" } });
-      }
-      return next();
-    })
+    .use("/auth", createAuthRouter(options.auth, Boolean(options.singleOrigin)))
+    .use((req, res, next) => req.path === "/status" || req.path === "/ready" ? next() : authorize(req, res, next))
     .use(urlencoded({ extended: true }))
     .use(json())
     .use((error: unknown, req: Request, res: Response, next: NextFunction) => {
@@ -59,7 +72,6 @@ export const createServer = (
       }
     })
     .use("/v1", createV1Router(ports))
-    .use(requireApiKey)
     .get("/message/:name", (req, res) => {
       return res.json({ message: `hello ${req.params.name}` });
     })

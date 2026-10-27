@@ -1,6 +1,12 @@
 /** Production REST requests stay on the origin that served the page. */
-export const getApiHost = (): string =>
-  process.env.NEXT_PUBLIC_API_HOST || "";
+export const getApiHost = (): string => {
+  if (process.env.NEXT_PUBLIC_API_HOST) return process.env.NEXT_PUBLIC_API_HOST;
+  if (process.env.NODE_ENV === "development") {
+    const hostname = typeof window === "undefined" ? "localhost" : window.location.hostname;
+    return `http://${hostname}:3001`;
+  }
+  return "";
+};
 
 /** The API bridges the VM's serial console and VNC display over WebSocket. */
 export const getApiWebSocketHost = (): string => {

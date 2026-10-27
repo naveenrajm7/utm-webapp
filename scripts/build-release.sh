@@ -29,8 +29,8 @@ cp packages/logger/package.json "$WORK/runtime/packages/logger/"
 node - "$ROOT" "$WORK/runtime" <<'NODE'
 const fs=require('fs'),path=require('path');
 const [root, runtime]=process.argv.slice(2);
-const packages=['body-parser','cors','express','morgan','node-pty','ws','next','react','react-dom','@novnc/novnc','@xterm/addon-fit','@xterm/xterm','bootstrap','bootstrap-icons'];
-const dependencies=Object.fromEntries(packages.map(name=>[name,require(path.join(root,'node_modules',name,'package.json')).version]));
+const packages=['better-sqlite3','body-parser','cors','express','morgan','node-pty','ws','next','react','react-dom','@novnc/novnc','@xterm/addon-fit','@xterm/xterm','bootstrap','bootstrap-icons'];
+const dependencies=Object.fromEntries(packages.map(name=>[name,require(require.resolve(name+'/package.json',{paths:[path.join(root,'apps/api'),root]})).version]));
 const manifest={name:'utm-web-runtime',private:true,version:'1.0.0',dependencies};
 fs.writeFileSync(path.join(runtime,'package.json'),JSON.stringify(manifest,null,2));
 NODE
@@ -45,6 +45,7 @@ chmod 755 "$WORK/runtime/node/node"
 cd "$WORK/runtime"
 PATH="$WORK/runtime/node:$PATH" CXXFLAGS="-std=c++17" npm_config_target="$NODE_VERSION" npm_config_arch="$([ "$ARCH" = arm64 ] && echo arm64 || echo x64)" npm_config_target_arch="$([ "$ARCH" = arm64 ] && echo arm64 || echo x64)" npm_config_disturl=https://nodejs.org/download/release "$WORK/runtime/node/node" "$WORK/runtime/node/lib/node_modules/npm/bin/npm-cli.js" install --omit=dev --no-audit --no-fund
 "$WORK/runtime/node/node" -e "require('./node_modules/node-pty'); console.log('native node-pty loaded for bundled Node')"
+"$WORK/runtime/node/node" -e "const D=require('better-sqlite3'); const db=new D(':memory:'); db.prepare('SELECT 1').get(); db.close(); console.log('native SQLite loaded for bundled Node')"
 # These workspace packages are local compiled outputs and not registry packages.
 rm -rf node_modules/@repo
 mkdir -p node_modules/@repo/logger node_modules/@repo/utm-adapter

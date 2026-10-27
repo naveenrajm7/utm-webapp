@@ -114,12 +114,14 @@ export class FakeApi {
     const origin = request.headers.origin;
     if (origin === this.webOrigin) {
       response.setHeader("Access-Control-Allow-Origin", origin);
-      response.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
+      response.setHeader("Access-Control-Allow-Credentials", "true");
+      response.setHeader("Access-Control-Allow-Headers", "authorization, content-type, x-utm-request, x-utm-csrf");
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     }
     response.setHeader("Content-Type", "application/json");
     if (request.method === "OPTIONS") return this.reply(response, 204);
     const path = new URL(request.url, `http://127.0.0.1:${this.port}`).pathname;
+    if (path === "/auth/status") return this.reply(response, 200, { mode: "api-key" });
     this.requests.push({ method: request.method, path, auth: request.headers.authorization });
     if (request.headers.authorization !== `Bearer ${API_KEY}`)
       return this.reply(response, 401, { error: { code: "unauthorized", message: "Invalid API key" } });
