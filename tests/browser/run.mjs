@@ -56,7 +56,9 @@ if (existsSync("apps/api/src/productionRuntime.ts")) {
   const oneOriginEnv = { ...env, NEXT_PUBLIC_API_HOST: "" };
   const webBuild = await buildWeb(oneOriginEnv);
   if (webBuild !== 0) process.exit(webBuild);
-  process.exitCode = await run(process.execPath, ["--test", "tests/browser/one-origin.test.mjs"], oneOriginEnv);
+  const oneOrigin = await run(process.execPath, ["--test", "tests/browser/one-origin.test.mjs"], oneOriginEnv);
+  if (oneOrigin !== 0) process.exit(oneOrigin);
+  process.exitCode = await run(process.execPath, ["--test", "tests/browser/admin-auth.test.mjs"], oneOriginEnv);
 } else {
   console.log("Production one-origin suite awaits the runtime branch.");
 }

@@ -64,6 +64,7 @@ describe("single origin production runtime with a fake adapter", () => {
   beforeEach(async () => {
     directory = mkdtempSync(join(tmpdir(), "utm-single-origin-"));
     process.env.UTM_API_JOB_JOURNAL_PATH = join(directory, "jobs.json");
+    process.env.UTM_AUTH_MODE = "api-key";
     process.env.UTM_API_KEY = KEY;
     lookups.length = 0;
     const adapter: InjectableAdapter = {
@@ -89,6 +90,7 @@ describe("single origin production runtime with a fake adapter", () => {
     rmSync(directory, { recursive: true, force: true });
     delete process.env.UTM_API_JOB_JOURNAL_PATH;
     delete process.env.UTM_API_KEY;
+    delete process.env.UTM_AUTH_MODE;
   });
 
   it("reloads VM and console pages while preserving authenticated REST shapes", async () => {

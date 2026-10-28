@@ -36,3 +36,9 @@ yarn-error.log*
 # turbo
 .turbo
 release-out/
+
+# Local application databases
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
