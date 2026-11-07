@@ -1,0 +1,12 @@
+UTM artwork
+
+The OS icon PNGs and app.png were copied from the installed UTM 5.0.8
+application, /Applications/UTM.app/Contents/Resources. app.png is a PNG
+conversion of its AppIcon.icns. The other images are unmodified.
+
+Upstream project: https://github.com/utmapp/UTM
+OS icons: https://github.com/utmapp/UTM/tree/main/Icons
+Copyright (c) UTM contributors and the respective artwork owners.
+UTM is distributed under the Apache License, Version 2.0; see LICENSE.txt.
+Operating system names and logos remain the property of their owners.
+UTM Web is a separate browser control plane, not the native UTM application.

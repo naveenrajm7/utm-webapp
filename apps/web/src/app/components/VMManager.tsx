@@ -6,6 +6,7 @@ import { IS_DEMO } from "../demo";
 import { useVmList } from "../useVmList";
 import { statusLabel } from "../vm";
 import VMActionControls from "./VMActionControls";
+import VMManagementControls from "./VMManagementControls";
 import { AppIcon } from "./VMIcon";
 import VMInfo from "./VMInfo";
 import VMList from "./VMList";
@@ -31,7 +32,8 @@ export default function VMManager() {
   } = useVmList();
   const [logoutError, setLogoutError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [sidebarWidth, setSidebarWidth] = useState(304);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [wideLayout, setWideLayout] = useState(false);
 
   useEffect(() => {
@@ -52,7 +54,9 @@ export default function VMManager() {
   };
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${wideLayout && sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+    >
       {sidebarOpen && (
         <button
           type="button"
@@ -63,7 +67,13 @@ export default function VMManager() {
       )}
       <aside
         className={`sidebar ${sidebarOpen ? "is-open" : ""}`}
-        style={wideLayout ? { width: sidebarWidth, flexBasis: sidebarWidth } : undefined}
+        aria-label="Virtual machine library"
+        hidden={wideLayout && sidebarCollapsed}
+        style={
+          wideLayout
+            ? { width: sidebarWidth, flexBasis: sidebarWidth }
+            : undefined
+        }
       >
         <div className="sidebar-titlebar">
           <button
@@ -74,9 +84,10 @@ export default function VMManager() {
               setSidebarOpen(false);
             }}
           >
-            <AppIcon size={22} />
-            UTM Web
+            <AppIcon size={24} />
+            UTM
           </button>
+          <span className="sidebar-library-label">Library</span>
         </div>
         <VMList
           vms={vms}
@@ -134,22 +145,30 @@ export default function VMManager() {
             type="button"
             className="icon-button sidebar-toggle"
             aria-label={
-              sidebarOpen
+              (wideLayout ? !sidebarCollapsed : sidebarOpen)
                 ? "Close virtual machine list"
                 : "Open virtual machine list"
             }
-            aria-expanded={sidebarOpen}
-            onClick={() => setSidebarOpen((open) => !open)}
+            aria-expanded={wideLayout ? !sidebarCollapsed : sidebarOpen}
+            onClick={() =>
+              wideLayout
+                ? setSidebarCollapsed((collapsed) => !collapsed)
+                : setSidebarOpen((open) => !open)
+            }
           >
             <i className="bi bi-layout-sidebar" />
           </button>
           <div className="toolbar-title">
             <span className="toolbar-title-name" title={selected?.name}>
-              {selected ? selected.name : "UTM Web"}
+              UTM
             </span>
             {selected && (
               <span className="toolbar-title-status">
-                {statusLabel(selected.status)}
+                {selected.name}
+                <span className="sr-only">
+                  {" "}
+                  · {statusLabel(selected.status)}
+                </span>
               </span>
             )}
           </div>
@@ -162,17 +181,30 @@ export default function VMManager() {
             </span>
           )}
           {selected && (
-            <VMActionControls
-              vm={selected}
-              busy={busyUuid !== null}
-              onAction={runAction}
-            />
+            <div className="toolbar-controls">
+              <VMManagementControls
+                key={selected.id}
+                vm={selected}
+                busy={busyUuid !== null}
+                onSubmit={runManagement}
+                toolbar
+              />
+              <VMActionControls
+                vm={selected}
+                busy={busyUuid !== null}
+                onAction={runAction}
+              />
+            </div>
           )}
           {!IS_DEMO && (
             <button
               type="button"
               className="icon-button lock-button"
-              onClick={() => { void logout().catch((error: Error) => setLogoutError(error.message)); }}
+              onClick={() => {
+                void logout().catch((error: Error) =>
+                  setLogoutError(error.message),
+                );
+              }}
               title="Log out"
               aria-label="Log out"
             >
@@ -181,7 +213,11 @@ export default function VMManager() {
           )}
         </header>
 
-        {logoutError && <div className="action-error" role="alert">{logoutError}</div>}
+        {logoutError && (
+          <div className="action-error" role="alert">
+            {logoutError}
+          </div>
+        )}
         {actionError && (
           <div className="action-error" role="alert">
             <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
@@ -198,10 +234,16 @@ export default function VMManager() {
         {actionJob && (
           <div className="vm-job-status" role="status">
             <i className="bi bi-arrow-clockwise spin" aria-hidden="true" />
-            {({
-              start: "Starting", stop: "Force stopping", clone: "Cloning",
-              configure: "Saving settings for", delete: "Deleting",
-            })[actionJob.action]} virtual machine · {actionJob.state}
+            {
+              {
+                start: "Starting",
+                stop: "Force stopping",
+                clone: "Cloning",
+                configure: "Saving settings for",
+                delete: "Deleting",
+              }[actionJob.action]
+            }{" "}
+            virtual machine · {actionJob.state}
           </div>
         )}
 
@@ -211,7 +253,6 @@ export default function VMManager() {
               vm={selected}
               busy={busyUuid !== null}
               onAction={runAction}
-              onManagement={runManagement}
               detailsLoading={detailsLoading}
               detailsError={detailsError}
             />

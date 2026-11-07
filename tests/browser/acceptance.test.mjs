@@ -132,6 +132,8 @@ test("browser acceptance against deterministic fake API", { timeout: 180000 }, a
     await until(() => browser.exists(".vm-management-actions"), "clone details");
     await clickButton("Settings", ".vm-management-actions");
     await browser.fill('[role="dialog"] input:nth-of-type(1)', "Acceptance Clone Edited");
+    await clickButton("System", '[role="dialog"]');
+    assert.equal(await browser.evaluate(`document.querySelector('[role="dialog"] input[min="128"]').getBoundingClientRect().width > 0`), true);
     await browser.fill('[role="dialog"] input[type="number"][min="128"]', "4352");
     await browser.fill('[role="dialog"] input[type="number"][min="0"]', "3");
     await clickButton("Save settings", '[role="dialog"]');
