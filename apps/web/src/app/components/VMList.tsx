@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   filterVms,
+  backendLabel,
   hasCapability,
   isBusyStatus,
   isRunning,
@@ -100,11 +101,19 @@ const VMList = ({
                 <span className="vm-row-text">
                   <span className="vm-row-name">{vm.name}</span>
                   <span className="vm-row-status">
-                    <span
-                      className={`status-dot ${statusTone(vm.status)}`}
-                      aria-hidden="true"
-                    />
-                    {statusLabel(vm.status)}
+                    {!isStopped(vm.status) && (
+                      <span
+                        className={`status-dot ${statusTone(vm.status)}`}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="vm-row-subtitle">
+                      {!isStopped(vm.status) && `${statusLabel(vm.status)} · `}
+                      {vm.machine || backendLabel(vm.backend)}
+                    </span>
+                    {isStopped(vm.status) && (
+                      <span className="sr-only"> · Stopped</span>
+                    )}
                   </span>
                 </span>
               </button>

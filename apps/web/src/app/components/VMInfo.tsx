@@ -17,8 +17,6 @@ import {
   type VM,
   type VmAction,
 } from "../vm";
-import VMManagementControls from "./VMManagementControls";
-import type { VmOperation } from "../vmStore";
 import VNCViewer from "./VNCViewer";
 import XTerminal from "./xterminal";
 
@@ -26,7 +24,6 @@ interface VMInfoProps {
   vm: VM;
   busy: boolean;
   onAction: (uuid: string, action: VmAction) => void;
-  onManagement?: (uuid: string, operation: VmOperation) => void;
   detailsLoading: boolean;
   detailsError: string | null;
 }
@@ -56,7 +53,6 @@ const VMInfo = ({
   vm,
   busy,
   onAction,
-  onManagement,
   detailsLoading,
   detailsError,
 }: VMInfoProps) => {
@@ -167,7 +163,10 @@ const VMInfo = ({
       return (
         <div className="vm-preview-copy">
           {serialOnly && (
-            <p>Serial console only. This virtual machine has no graphical display.</p>
+            <p>
+              Serial console only. This virtual machine has no graphical
+              display.
+            </p>
           )}
           {consoles.map((item) => (
             <button
@@ -197,7 +196,10 @@ const VMInfo = ({
             <i className="bi bi-play-fill" aria-hidden="true" />
           </button>
           {serialOnly ? (
-            <p>Serial console only. This virtual machine has no graphical display.</p>
+            <p>
+              Serial console only. This virtual machine has no graphical
+              display.
+            </p>
           ) : graphical && !screenshot ? (
             <p>No saved preview.</p>
           ) : null}
@@ -217,117 +219,118 @@ const VMInfo = ({
     );
   };
 
+  const preview = (
+    <div className={previewClass} aria-label="Virtual machine preview">
+      {screenshot && (
+        // Saved frames arrive as data URLs, which the image optimizer cannot fetch.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="vm-preview-image"
+          src={screenshot}
+          alt={`Saved preview of ${vm.name}`}
+        />
+      )}
+      {previewBody()}
+    </div>
+  );
   const details = (
     <div className="vm-detail">
-      <div className={previewClass}>
-        {screenshot && (
-          // Saved frames arrive as data URLs, which the image optimizer cannot fetch.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            className="vm-preview-image"
-            src={screenshot}
-            alt={`Saved preview of ${vm.name}`}
-          />
-        )}
-        {previewBody()}
-      </div>
-
-      {onManagement && <VMManagementControls key={vm.id} vm={vm} busy={transitioning} onSubmit={onManagement} />}
-
       <div className="group-box">
-          <h2>Details</h2>
-          {detailsLoading && <p className="vm-list-empty">Loading details…</p>}
-          {detailsError && (
-            <p className="vm-list-banner" role="alert">
-              {detailsError}
-            </p>
+        <h2 className="sr-only">Details</h2>
+        {detailsLoading && <p className="vm-list-empty">Loading details…</p>}
+        {detailsError && (
+          <p className="vm-list-banner" role="alert">
+            {detailsError}
+          </p>
+        )}
+        <dl className="vm-spec">
+          <DetailRow icon="bi-power" label="Status">
+            {statusLabel(vm.status)}
+          </DetailRow>
+          <DetailRow icon="bi-boxes" label="Backend">
+            {backendLabel(vm.backend)}
+          </DetailRow>
+          {vm.architecture && (
+            <DetailRow icon="bi-cpu" label="Architecture">
+              {vm.architecture}
+            </DetailRow>
           )}
-          <dl className="vm-spec">
-            <DetailRow icon="bi-power" label="Status">
-              {statusLabel(vm.status)}
+          {vm.machine && (
+            <DetailRow icon="bi-motherboard" label="Machine">
+              {vm.machine}
             </DetailRow>
-            <DetailRow icon="bi-boxes" label="Backend">
-              {backendLabel(vm.backend)}
+          )}
+          <DetailRow icon="bi-memory" label="Memory">
+            {formatMemory(vm.memoryMiB)}
+          </DetailRow>
+          <DetailRow icon="bi-grid-3x3-gap" label="CPU cores">
+            {formatCpuCores(vm.cpuCores)}
+          </DetailRow>
+          {vm.drives != null && (
+            <DetailRow icon="bi-hdd" label="Drives">
+              {summarizeList(vm.drives, "No drives")}
             </DetailRow>
-            {vm.architecture && (
-              <DetailRow icon="bi-cpu" label="Architecture">
-                {vm.architecture}
-              </DetailRow>
-            )}
-            {vm.machine && (
-              <DetailRow icon="bi-motherboard" label="Machine">
-                {vm.machine}
-              </DetailRow>
-            )}
-            <DetailRow icon="bi-memory" label="Memory">
-              {formatMemory(vm.memoryMiB)}
-            </DetailRow>
-            <DetailRow icon="bi-grid-3x3-gap" label="CPU cores">
-              {formatCpuCores(vm.cpuCores)}
-            </DetailRow>
-            {vm.drives != null && (
-              <DetailRow icon="bi-hdd" label="Drives">
-                {summarizeList(vm.drives, "No drives")}
-              </DetailRow>
-            )}
-            <DetailRow icon="bi-globe" label="Network">
-              {networkLabel(vm)}
-            </DetailRow>
-            <DetailRow icon="bi-terminal" label="Serial">
-              {serial.text}
-            </DetailRow>
-            <DetailRow icon="bi-fingerprint" label="UUID">
-              <span className="vm-uuid">
-                <code>{vm.id}</code>
-                <button
-                  type="button"
-                  className="push-button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(vm.id).then(
-                      () => {
-                        setCopied(true);
-                        window.setTimeout(() => setCopied(false), 1500);
-                      },
-                      () => setCopied(false),
-                    );
-                  }}
-                >
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </span>
-            </DetailRow>
-          </dl>
-        </div>
+          )}
+          <DetailRow icon="bi-globe" label="Network">
+            {networkLabel(vm)}
+          </DetailRow>
+          <DetailRow icon="bi-terminal" label="Serial">
+            {serial.text}
+          </DetailRow>
+          <DetailRow icon="bi-fingerprint" label="UUID">
+            <span className="vm-uuid">
+              <code>{vm.id}</code>
+              <button
+                type="button"
+                className="push-button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(vm.id).then(
+                    () => {
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1500);
+                    },
+                    () => setCopied(false),
+                  );
+                }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </span>
+          </DetailRow>
+        </dl>
+      </div>
     </div>
   );
 
   return (
-    <section className="vm-window" aria-label={vm.name}>
-      {consoles.length > 0 && (
-        <div className="vm-window-toolbar">
-          <div
-            className="segmented"
-            role="tablist"
-            aria-label="Virtual machine views"
-          >
-            {views.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                id={`tab-${item.id}`}
-                aria-selected={activeView === item.id}
-                aria-controls={`panel-${item.id}`}
-                className={activeView === item.id ? "is-selected" : ""}
-                onClick={() => setView(item.id)}
-              >
-                <i className={`bi ${item.icon}`} aria-hidden="true" />
-                {item.label}
-              </button>
-            ))}
-          </div>
+    <section
+      className={`vm-window ${activeView === "details" ? "is-details" : "is-console"}`}
+      aria-label={vm.name}
+    >
+      {activeView === "details" && preview}
+      <div className="vm-window-toolbar">
+        <div
+          className="segmented"
+          role="tablist"
+          aria-label="Virtual machine views"
+        >
+          {views.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              id={`tab-${item.id}`}
+              aria-selected={activeView === item.id}
+              aria-controls={`panel-${item.id}`}
+              className={activeView === item.id ? "is-selected" : ""}
+              onClick={() => setView(item.id)}
+            >
+              <i className={`bi ${item.icon}`} aria-hidden="true" />
+              {item.label}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
       <div
         className={activeView === "details" ? "vm-detail-pane" : "vm-pane"}
         role="tabpanel"
@@ -339,7 +342,9 @@ const VMInfo = ({
           : activeView === "display"
             ? (renderGate("display") ?? (
                 <VNCViewer
-                  url={getAuthenticatedWebSocketUrl("/ws/vnc", { vmUUID: vm.id })}
+                  url={getAuthenticatedWebSocketUrl("/ws/vnc", {
+                    vmUUID: vm.id,
+                  })}
                 />
               ))
             : (renderGate("serial") ?? <XTerminal vmUUID={vm.id} />)}
